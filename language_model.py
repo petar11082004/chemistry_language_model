@@ -1,26 +1,19 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[ ]:
-
-
 # import pyscf
 from pyscf import gto, scf
+from pyscf import lo
+import numpy as np
 import scipy as sp
-
-
-# In[ ]:
-
-
+    
 class MoleculeFeatureExtractor:
 
     def __init__(self, mol):
         self.mol = mol
 
+    @staticmethod
     def localize_orbitals_separately(mol, mo_coeff, mo_occ):
 
         """
-        Localize occupied and virtual molecular orbitals separatley using Boys method
+        Localize occupied and virtual molecular orbitals separately using Boys method.
 
         Args:
             mol: pyscf.gto.Mole
@@ -30,7 +23,7 @@ class MoleculeFeatureExtractor:
 
         Returns:
             numpy.ndarray:
-                stacked localized occupied and virtual orbitals
+                stacked localized occupied and virtual orbitals.
         """
 
         #Create boolean masks
@@ -41,39 +34,46 @@ class MoleculeFeatureExtractor:
         occupied_orbitals_coeffs = mo_coeff[:, occ_idx]
         virtual_orbitals_coeffs = mo_coeff[:, vir_idx]
 
-        localized_occupied_orbitals_method = lo.Boys(mol, occupied_orbitals_coeffs)
-        localized_virtual_orbitals_method = lo.Boys(mol, virtual_orbitals_coeffs)        
+        #.pipek.PipekMezey, .edmiston.EdmistonRuedenberg
+
+        localized_occupied_orbitals_method = lo.pipek.PipekMezey(mol, occupied_orbitals_coeffs)
+        localized_virtual_orbitals_method = lo.pipek.PipekMezey(mol, virtual_orbitals_coeffs)        
 
         localized_occupied_orbitals_coeffs = localized_occupied_orbitals_method.kernel()
         localized_virtual_orbitals_coeffs = localized_virtual_orbitals_method.kernel()
 
-        U_occ = localized_occupied_orbitals_coeffs @ np.linalg.inv(occupied_orbitals_coeffs)
-        U_vir = localized_virtual_orbitals_coeffs @ np.linalg.inv(virtual_orbitals_coeffs)
+        print(f"localized_occupied_orbitals_coeffs shape {localized_occupied_orbitals_coeffs.shape}")
+        print(f"localized_virtual_orbitals_coeffs.shape {localized_virtual_orbitals_coeffs.shape}")
+        print(f"np.linalg.pinv(occupied_orbitals_coeffs): {np.linalg.pinv(occupied_orbitals_coeffs).shape}")
+        print(f"np.linalg.pinv(virtual_orbitals_coeffs){np.linalg.pinv(virtual_orbitals_coeffs).shape}")
+
+        U_occ =  np.linalg.pinv(occupied_orbitals_coeffs) @ localized_occupied_orbitals_coeffs
+        U_vir = np.linalg.pinv(virtual_orbitals_coeffs) @ localized_virtual_orbitals_coeffs
         U = sp.linalg.block_diag(U_occ, U_vir)
 
         loc_mo_coeffs = np.hstack([localized_occupied_orbitals_coeffs, localized_virtual_orbitals_coeffs])
 
         return loc_mo_coeffs, U
 
+    @staticmethod
     def population_analysis(mol, C_loc, mf):
 
         """
-        Perform Mulliken population analyzis on molecular orbitals 
-        to determine which atoms are they centered on
-
+        Perform Mulliken population analysis on molecular orbitals 
+        to determine which atoms each orbital is centered on.
         Args:
             mol: pyscf.gto.Mole
                 Molecule object.
             C_loc: numpy.ndarray
-                localized molecular orbitals coefficients
+                localized molecular orbitals coefficients.
             mf: pyscf.scf.hf.SCF
                 Mean-field (SCF) calculation result.
 
         Returns:
-            Tuple([numpy.ndarray, numpy.ndarray, numpy.ndarray]):
-                atoms_0: list of most-contributing atom symbols per orbital
-                atoms_1: list of second-most -contributing atom symbols per orb:
-                distances: list of distances between those atom pairs
+            Tuple([List[str], List[str], List[float]]):
+                atoms_0: list of most-contributing atom symbols per orbital.
+                atoms_1: list of second-most -contributing atom symbols per orb.
+                distances: list of distances between those atom pairs.
         """
 
         # Get overlap matrix
@@ -112,31 +112,33 @@ class MoleculeFeatureExtractor:
             
         return atoms_0, atoms_1, distances
 
+    @staticmethod
     def determine_orbital_type(mol, C_loc):
 
         """
         calculate the expectation values of Lz^2 for the molecular orbitals 
-        to determine their character
+        to determine their character.
 
         Args:
             mol: pyscf.gto.Mole
                 Molecule object.
             C_loc: numpy.ndarray
-                localized molecular orbitals coefficients
+                localized molecular orbitals coefficients.
             
         Returns:
             list of str:
-                Labels of the type of MO (σ, π, δ, or mixed).
+                labels: Labels of the type of MO (σ, π, δ, or mixed).
         """
 
         lz_3comp = gto.moleintor.getints('int1e_cg_irxp_sph', mol._atm, mol._bas, mol._env, comp = 3)
         lz_matrix = lz_3comp[2]
-        lz_squared = lz_matrix @ lz_matrix
+        lz_squared = lz_matrix.conj().T @ lz_matrix 
         lz_expect = np.diag(C_loc.conj().T @ lz_squared @ C_loc).real
 
         labels = []
-
+        print(f"lz_expect: {lz_expect}")
         for lz_val in lz_expect:
+
             if abs(lz_val) < 0.1:
                 label = 'σ'
             elif abs(lz_val - 1.0) < 0.1:
@@ -145,40 +147,86 @@ class MoleculeFeatureExtractor:
                 label = 'δ'
             else:
                 label = 'mixed'
-            labels.append(label)
 
+            labels.append(label)
         return labels
 
-    def calculate_energy(mol, C_loc, mf, U):
+    @staticmethod
+    def calculate_energy(mf, U):
 
         """
-        calculate the energies of the localized molecular orbitals
+        Calculate the energies of the localized molecular orbitals.
 
         Args:
-            mol: pyscf.gto.Mole
-                Molecule object.
-            C_loc: numpy.ndarray
-                localized molecular orbitals coefficients
             mf: pyscf.scf.hf.SCF
                 Mean-field (SCF) calculation result.
+            U: np.ndarray
+               Unitary matrix used to localize the MOs.
             
         Returns:
-            list of floats:
-                Energies of MOs.
+            List[float]:
+                loc_mo_energies: Energies of the localized MOs.
         """
 
-        mo_energies = mf.mo_energies
-
-        ## finish function
+        mo_energies = mf.mo_energy
+        loc_mo_energies = np.sum(np.abs(U)**2 * mo_energies[np.newaxis, :], axis=1)
+        print(loc_mo_energies)
+        return loc_mo_energies
         
-    def obtain_mo_coeffs(mol)
-        mf = scf.RHF(mol)
+    def extract_molecule_features(self):
+
+        """
+        Extract molecule features
+
+        Args:
+
+        Returns:
+            Tuple([List[str], List[str], List[float], List[str], List[float]):
+                atoms_0: list of most-contributing atom symbols per orbital.
+                atoms_1: list of second-most -contributing atom symbols per orb.
+                distances: list of distances between those atom pairs.
+                labels: Labels of the type of MO (σ, π, δ, or mixed).
+                mo_energies: Energies of the localized MOs.
+        """
+        mf = scf.RHF(self.mol)
         mf.kernel()
         mo_coeff = mf.mo_coeff
         mo_occ = mf.mo_occ
-        C_loc = localize_orbitals_separately(mol, mo_coeff, mo_occ)
-
-    
-
+        C_loc, U = MoleculeFeatureExtractor.localize_orbitals_separately(self.mol, mo_coeff, mo_occ)
+        atoms_0, atoms_1, distances = MoleculeFeatureExtractor.population_analysis(self.mol, C_loc, mf)
+        print(f"atoms 0: {atoms_0}")
+        print(f"atoms 1: {atoms_1}")
+        print(f"distances: {distances}")
+        labels = MoleculeFeatureExtractor.determine_orbital_type(self.mol, C_loc)
+        print(labels)
+        mo_energies = MoleculeFeatureExtractor.calculate_energy(mf, U)
         
+from pyscf import gto, scf, cc
 
+"""
+mol = gto.Mole()
+mol.atom = '''
+H  0.0000  0.0000  -2.261
+C  0.0000  0.0000  -1.203
+C  0.0000  0.0000   1.203
+H  0.0000  0.0000   2.261
+'''
+mol.basis = 'sto-3g'
+mol.charge = 0
+mol.spin = 0
+mol.build()
+"""
+
+mol = gto.Mole()
+mol.atom = '''
+O1 0 0 0
+O2 0 0 2.28
+'''
+mol.unit = 'B'
+mol.basis = 'sto-3g'
+mol.charge = 0
+mol.spin = 0
+mol.build()
+
+c = MoleculeFeatureExtractor(mol)
+c.extract_molecule_features()
