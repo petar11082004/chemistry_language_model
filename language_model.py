@@ -1,8 +1,11 @@
 # import pyscf
-from pyscf import gto, scf
+from pyscf import gto, scf, cc
 from pyscf import lo
+from pyscf.tools import cubegen
 import numpy as np
 import scipy as sp
+import py3Dmol
+import os
     
 class MoleculeFeatureExtractor:
 
@@ -172,6 +175,24 @@ class MoleculeFeatureExtractor:
         loc_mo_energies = np.sum(np.abs(U)**2 * mo_energies[np.newaxis, :], axis=1)
         print(loc_mo_energies)
         return loc_mo_energies
+    
+    @staticmethod
+    def generate_cube_files(C_loc):
+
+        """
+        generate cube files so that we can visualise the molecular orbitals
+
+        Args:
+            C_loc: np.ndarray
+                   localized molecular orbitals' coefficients
+        """
+
+        for mo_index in range(C_loc.shape[1]):
+            coeff_vector = C_loc[:, mo_index]
+            cube_filename = f'mo{mo_index}.cube'
+
+            # Step 3: Generate cube file for MO #5
+            cubegen.orbital(mol, cube_filename, coeff_vector, nx=80, margin=3.0)
         
     def extract_molecule_features(self):
 
@@ -200,10 +221,10 @@ class MoleculeFeatureExtractor:
         labels = MoleculeFeatureExtractor.determine_orbital_type(self.mol, C_loc)
         print(labels)
         mo_energies = MoleculeFeatureExtractor.calculate_energy(mf, U)
-        
-from pyscf import gto, scf, cc
+        MoleculeFeatureExtractor.visualise_molecular_orbitals(C_loc)
 
-"""
+        return atoms_0, atoms_1, distances, labels, mo_energies
+
 mol = gto.Mole()
 mol.atom = '''
 H  0.0000  0.0000  -2.261
@@ -215,18 +236,6 @@ mol.basis = 'sto-3g'
 mol.charge = 0
 mol.spin = 0
 mol.build()
-"""
-
-mol = gto.Mole()
-mol.atom = '''
-O1 0 0 0
-O2 0 0 2.28
-'''
-mol.unit = 'B'
-mol.basis = 'sto-3g'
-mol.charge = 0
-mol.spin = 0
-mol.build()
 
 c = MoleculeFeatureExtractor(mol)
-c.extract_molecule_features()
+_,_,_,_,_, = c.extract_molecule_features()
