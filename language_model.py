@@ -186,10 +186,12 @@ class MoleculeFeatureExtractor:
             C_loc: np.ndarray
                    localized molecular orbitals' coefficients
         """
-
+        # Create output directory if it doesn't exist
+        os.makedirs("cube_files", exist_ok=True)
         for mo_index in range(C_loc.shape[1]):
             coeff_vector = C_loc[:, mo_index]
-            cube_filename = f'mo{mo_index}.cube'
+
+            cube_filename = os.path.join("cube_files", f'mo{mo_index}.cube')
 
             # Step 3: Generate cube file for MO #5
             cubegen.orbital(mol, cube_filename, coeff_vector, nx=80, margin=3.0)
@@ -221,7 +223,7 @@ class MoleculeFeatureExtractor:
         labels = MoleculeFeatureExtractor.determine_orbital_type(self.mol, C_loc)
         print(labels)
         mo_energies = MoleculeFeatureExtractor.calculate_energy(mf, U)
-        MoleculeFeatureExtractor.visualise_molecular_orbitals(C_loc)
+        MoleculeFeatureExtractor.generate_cube_files(C_loc)
 
         return atoms_0, atoms_1, distances, labels, mo_energies
 
