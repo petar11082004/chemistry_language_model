@@ -193,7 +193,6 @@ class MoleculeFeatureExtractor:
 
             cube_filename = os.path.join("cube_files", f'mo{mo_index}.cube')
 
-            # Step 3: Generate cube file for MO #5
             cubegen.orbital(mol, cube_filename, coeff_vector, nx=80, margin=3.0)
         
     def extract_molecule_features(self):
