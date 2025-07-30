@@ -172,8 +172,9 @@ class MoleculeFeatureExtractor:
         """
 
         mo_energies = mf.mo_energy
-        loc_mo_energies = np.sum(np.abs(U)**2 * mo_energies[np.newaxis, :], axis=1)
-        print(loc_mo_energies)
+        print(f"MO energies: {mo_energies}")
+        loc_mo_energies = np.diag(U.conj().T @ np.diag(mo_energies) @ U).real
+        print()
         return loc_mo_energies
     
     @staticmethod
@@ -228,11 +229,13 @@ class MoleculeFeatureExtractor:
 
 mol = gto.Mole()
 mol.atom = '''
-H  0.0000  0.0000  -2.261
-C  0.0000  0.0000  -1.203
-C  0.0000  0.0000   1.203
-H  0.0000  0.0000   2.261
+H  0.0000  0.0000  -1.6644
+C  0.0000  0.0000  -0.6013
+C  0.0000  0.0000   0.6013
+H  0.0000  0.0000   1.6644
 '''
+
+mol.unit = 'Angstrom'
 mol.basis = 'sto-3g'
 mol.charge = 0
 mol.spin = 0
