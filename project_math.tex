@@ -1,0 +1,142 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage{amsmath}  % For advanced math formatting
+\usepackage{braket}   % For Dirac notation
+\usepackage{physics}  % Optional: for common quantum physics notation
+\usepackage{hyperref} % Optional: for clickable links
+\usepackage{geometry} % Optional: to adjust page margins
+\usepackage{minted}
+\geometry{margin=1in}
+
+\title{Chemistry Summer Project}
+\author{pp583}
+\date{July 2025}
+
+\begin{document}
+
+\maketitle
+
+\section{Procedure for finding parameters to feed into a machine learning model}
+
+\subsection*{1. Get Localized Molecular Orbitals}
+
+\begin{itemize}
+    \item Generate a molecule.
+
+    \item Using \verb|mf.mo_occ| and \verb|mf.mo_coeff|, split the molecular orbital (MO) coefficients into those corresponding to occupied and virtual (unoccupied) orbitals.
+
+    \item The molecular orbitals ($\psi_i$) are expressed as:
+    \[
+    \psi_i = \sum_{\mu=1}^{K} \phi_\mu C_{\mu i}
+    \]
+    where K is the number of atomic orbitals
+    \item After splitting, we define:
+    \[
+    \psi_i^{\mathrm{occ}} = \sum_{\mu=1}^{K} \phi_\mu C_{\mu i}
+    \qquad \text{and} \qquad
+    \psi_a^{\mathrm{vir}} = \sum_{\mu=1}^{K} \phi_\mu C_{\mu a}
+    \]
+    where $i = 1,2...N_{occ}$ and $a = 1,2...N_{vir} $
+    \item Then we localize the orbitals by finding a unitary rotation:
+    \[
+    \widetilde{\psi}_{\mathrm{occ}} = \psi_{\mathrm{occ}} \mathrm{U}_{\mathrm{occ}}
+    \qquad \text{and} \qquad
+    \widetilde{\psi}_{\mathrm{vir}} = \psi_{\mathrm{vir}} \mathrm{U}_{\mathrm{vir}}
+    \]
+
+    \item In our coordinate system, set by the basis functions, we represent this as:
+    \[
+    \widetilde{C}_{\mu I}^{\mathrm{occ}} = \sum_{i} C_{\mu i}^{\mathrm{occ}} U_{iI}
+    \qquad \text{and} \qquad
+    \widetilde{C}_{\mu A}^{\mathrm{vir}} = \sum_{a} C_{\mu a}^{\mathrm{vir}} U_{aA}
+    \]
+
+    \item Then we stack the two matrices to obtain the new matrix with the coefficients of the localized molecular orbitals: \( \widetilde{C}  = (\widetilde{C}_{\mu I}^{\mathrm{occ}}, \widetilde{C}_{\mu I}^{\mathrm{vir}})\)
+\end{itemize}
+
+\subsection*{2. Perform Population Analysis on the Molecular Orbitals}
+\subsubsection*{\textit{\textbf{!}} usually we should orient orient all the bonds along the z-axis when performing these calculations but I am not sure how this will affect our orbitals, so for now I am working with diatomic molecules that are oriented along the z-axis}   
+
+\begin{itemize}
+    \item The number of electrons in each orbital is:
+    \[
+    n_i = \braket{\widetilde{\psi}_i} = 1
+    \]
+
+    \item In our chosen basis, this becomes:
+    \[
+    n_i = \sum_{\mu, \nu} \widetilde{C}_{\mu i}^{*} \widetilde{C}_{\nu i} \int \phi_{\mu}^{*}(r) \phi_{\nu}(r) \,dr = \sum_{\mu, \nu} \widetilde{C}_{\mu i}^{*} \widetilde{C}_{\nu i} S_{\mu \nu}
+    \]
+
+    \item We define the \textbf{atomic population} of orbital \( \psi_i \) on atom \( A \) as:
+    \[
+    q_A = \sum_{\mu \in A} \sum_{\nu} \widetilde{C}_{\mu i}^{*} \widetilde{C}_{\nu i} S_{\mu \nu} = \sum_{\mu \in A} \sum_{\nu} \widetilde{C}_{i \mu}^{\dagger} S_{\mu \nu} \widetilde{C}_{\nu i}
+    \]
+
+    \item By looking at \( q_A \) for the different atoms, we can determine which atoms the orbitals are centered on (along with knowing interatomic distances).
+\end{itemize}
+
+\subsection*{3. Calculate the Expectation Values of \( \hat{L}_z \) for the localized Molecular Orbitals}
+
+\begin{itemize}
+    \item The expectation value is:
+    \[
+    \bra{\widetilde{\psi}_i} {\hat{L}_z}\ket{\widetilde{\psi}_i} = \sum_{\mu,\nu} \widetilde{C}_{\mu i}^{*} \bra{\phi_\mu} \hat{L}_z \ket{\phi_\nu} \widetilde{C}_{\nu i} = \sum_{\mu,\nu} \widetilde{C}_{i \mu}^{\dagger} L_{\mu \nu} \widetilde{C}_{\nu i} = (\widetilde{C}^{\dagger} L \widetilde{C})_{ii}
+    \]
+    where \( L \) is the matrix representation of the angular momentum operator \(\hat{L}_z\) in the basis \( \{ \phi_\mu \} \) 
+
+    However, since the matrix representation of $\hat{L}_z$ in a real-valued atomic orbital basis has vanishing diagonal elements, it is more appropriate to use the squared operator $\hat{L}_z^2$ to characterize the angular momentum of molecular orbitals.
+
+    \[
+    \bra{\widetilde{\psi}_i} {\hat{L}_z^{2}}\ket{\widetilde{\psi}_i} = \sum_{\mu,\nu} \widetilde{C}_{\mu i}^{*} \bra{\phi_\mu} \hat{L}_z^{2} \ket{\phi_\nu} \widetilde{C}_{\nu i} = \sum_{\mu,\nu} \widetilde{C}_{\mu i}^{*} \sum_{\lambda}( \bra{\phi_\mu} \hat{L}_z \ket{\phi_\lambda} \bra{\phi_\lambda} \hat{L}_z\ket{\phi_\nu}) \widetilde{C}_{\nu i} = \sum_{\mu,\nu} \widetilde{C}_{i \mu}^{\dagger} L_{\mu \nu}^2 \widetilde{C}_{\nu i} = (\widetilde{C}^{\dagger} L^2 \widetilde{C})_{ii}
+    \]
+
+    The \verb|pyscf| code for obtaining the $\hat{L}_z$ matrix is:
+
+\begin{minted}[fontsize=\small, linenos]{python}
+from pyscf.gto import moleintor
+# Build molecule
+mol = gto.Mole()
+mol.atom = 'H 0 0 0; F 0 1.1 0'  
+mol.basis = 'sto-3g'            
+mol.build()
+
+# Compute angular momentum operator integrals: r × p
+lz_3comp = moleintor.getints('int1e_cg_irxp_sph',
+                             mol._atm, mol._bas, mol._env,
+                             comp=3)
+lz_matrix = lz_3comp[2]
+
+\end{minted}
+\end{itemize}
+
+\subsection*{4. Calculate the expectation values of \(\hat{F})\) for the localized Molecular orbitals(i.e estimate their energies)}
+
+\begin{itemize}
+    \item The expectation value is: 
+    \[
+    \bra{\widetilde{\psi}_i}\hat{F}\ket{\widetilde{\psi}_i} = \widetilde{\epsilon}_i
+    \]
+
+    \[
+    \widetilde{\epsilon}_i = \int (\sum_{p} \psi_{p}^{*} U_{pi}^{*}) \hat{F}(\sum_{q} \psi_{q} U_{qi}) =
+    \int (\sum_{p} \psi_{p}^{*} U_{pi}^{*})(\sum_{q} \epsilon_q \psi_{q} U_{qi}) =
+    \sum_{pq} U_{pi}^{*}U_{qi}\epsilon_{q}\delta_{pq} = \sum_{pq} U_{ip}^{\dagger}U_{qi}\epsilon_{q}\delta_{pq} = \sum_{p} |U_{pi}|^{2}\epsilon_{p}
+    \]
+    this is a \textbf{weighted average} of the energies of the canonical MOs $\epsilon_p$
+    U has the form:
+    \[ U =  
+    \begin{pmatrix}
+    U^{occ} & 0 \\
+    0 & U^{vir}
+    \end{pmatrix}   
+    \]
+
+    if we turn $\epsilon_p$ into a diagonal matrix, then the above expression will have the following form:
+
+    \[
+    \widetilde{\epsilon}_i = (U^{\dagger}\epsilon U)_{ii}
+    \]
+
+\end{itemize}
+\end{document}
