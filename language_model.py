@@ -135,18 +135,22 @@ class MoleculeFeatureExtractor:
 
         lz_3comp = gto.moleintor.getints('int1e_cg_irxp_sph', mol._atm, mol._bas, mol._env, comp = 3)
         lz_matrix = lz_3comp[2]
-        lz_squared = lz_matrix.conj().T @ lz_matrix 
-        lz_expect = np.diag(C_loc.conj().T @ lz_squared @ C_loc).real
+
+        evals, evecs = np.linalg.eigh(lz_matrix)
+        maglz = evecs @ np.diag(np.abs(evals)) @ evecs.T
+
+        #lz_squared = lz_matrix.conj().T @ lz_matrix 
+        maglz_expect = np.diag(C_loc.conj().T @ maglz @ C_loc).real
 
         labels = []
-        print(f"lz_expect: {lz_expect}")
-        for lz_val in lz_expect:
+        print(f"maglz_expect: {maglz_expect}")
+        for maglz_val in maglz_expect:
 
-            if abs(lz_val) < 0.1:
+            if abs(maglz_val) < 0.2:
                 label = 'σ'
-            elif abs(lz_val - 1.0) < 0.1:
+            elif abs(maglz_val - 1.0) < 0.2:
                 label = 'π'
-            elif abs(lz_val - 4.0) < 0.1:
+            elif abs(maglz_val - 2.0) < 0.2:
                 label = 'δ'
             else:
                 label = 'mixed'
@@ -174,7 +178,6 @@ class MoleculeFeatureExtractor:
         mo_energies = mf.mo_energy
         print(f"MO energies: {mo_energies}")
         loc_mo_energies = np.diag(U.conj().T @ np.diag(mo_energies) @ U).real
-        print()
         return loc_mo_energies
     
     @staticmethod
@@ -192,7 +195,7 @@ class MoleculeFeatureExtractor:
         for mo_index in range(C_loc.shape[1]):
             coeff_vector = C_loc[:, mo_index]
 
-            cube_filename = os.path.join("cube_files", f'mo{mo_index}.cube')
+            cube_filename = os.path.join("cube_files", f'CO2mo{mo_index}.cube')
 
             cubegen.orbital(mol, cube_filename, coeff_vector, nx=80, margin=3.0)
         
@@ -228,11 +231,10 @@ class MoleculeFeatureExtractor:
         return atoms_0, atoms_1, distances, labels, mo_energies
 
 mol = gto.Mole()
-mol.atom = '''
-H  0.0000  0.0000  -1.6644
-C  0.0000  0.0000  -0.6013
-C  0.0000  0.0000   0.6013
-H  0.0000  0.0000   1.6644
+mol.atom ='''
+C2	0.0000	0.0000	0.0000
+O3	0.0000	0.0000	1.1621
+O1	0.0000	0.0000	-1.1621
 '''
 
 mol.unit = 'Angstrom'
