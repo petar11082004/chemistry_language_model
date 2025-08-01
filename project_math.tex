@@ -5,6 +5,7 @@
 \usepackage{physics}  % Optional: for common quantum physics notation
 \usepackage{hyperref} % Optional: for clickable links
 \usepackage{geometry} % Optional: to adjust page margins
+\usepackage{tcolorbox}
 \usepackage{minted}
 \geometry{margin=1in}
 
@@ -55,7 +56,6 @@
 \end{itemize}
 
 \subsection*{2. Perform Population Analysis on the Molecular Orbitals}
-\subsubsection*{\textit{\textbf{!}} usually we should orient orient all the bonds along the z-axis when performing these calculations but I am not sure how this will affect our orbitals, so for now I am working with diatomic molecules that are oriented along the z-axis}   
 
 \begin{itemize}
     \item The number of electrons in each orbital is:
@@ -108,9 +108,30 @@ lz_3comp = moleintor.getints('int1e_cg_irxp_sph',
 lz_matrix = lz_3comp[2]
 
 \end{minted}
+\begin{tcolorbox}[colback=blue!5!white, colframe=red!75!black, title=Important Note]
+For now we work only with MOs that are centered on two atoms
+\end{tcolorbox}
+
+For the computation of the expectation values of $\hat{L}_z$, all molecular orbitals must be aligned along the \textbf{z-axis}. To achieve this, we use the \verb|rotate_coeffs| function from \verb|rotate.py| in the \verb|revqcmagic| repository.
+
+This function requires the following inputs:
+\begin{itemize}
+    \item The \textbf{localized MO coefficient matrix}
+    \item The \textbf{basis shell structure}, which can be extracted from the \verb|mol| object in \textbf{PySCF}
+    \item The \textbf{rotation angle and axis}, which are determined by identifying the atoms on which each orbital is localized and computing the orientation of the orbital. The required rotation to align this orientation vector with the z-axis is then applied.
 \end{itemize}
 
-\subsection*{4. Calculate the expectation values of \(\hat{F})\) for the localized Molecular orbitals(i.e estimate their energies)}
+By rotating each orbital into the z-axis direction, we ensure a consistent frame for computing $\langle \hat{L}_z \rangle$ values.
+
+To obtain the angle of rotation we simply need to find the angle between the z-axis($\textbf{$\hat{z}$}$) and the line connecting the two atoms on which the MOs are centered($\textbf{r}$):
+
+\[
+\theta = \cos^{-1}\left( \frac{ \mathbf{r} \cdot \hat{\mathbf{z}} }{ \left| \mathbf{r} \right| } \right)
+\]
+
+\end{itemize}
+
+\subsection*{4. Calculate the expectation values of \(\hat{F}\) for the localized Molecular orbitals(i.e estimate their energies)}
 
 \begin{itemize}
     \item The expectation value is: 

@@ -6,6 +6,7 @@ import numpy as np
 import scipy as sp
 import py3Dmol
 import os
+from qcmagic.core.drivers.statetools.rotate import rotate_coeffs
     
 class MoleculeFeatureExtractor:
 
@@ -57,6 +58,74 @@ class MoleculeFeatureExtractor:
         loc_mo_coeffs = np.hstack([localized_occupied_orbitals_coeffs, localized_virtual_orbitals_coeffs])
 
         return loc_mo_coeffs, U
+    
+    @staticmethod
+    def find_distances_and_atoms_on_which_MOs_are_centered(mol, indices_list):
+        
+        atoms0 = []
+        atoms1 = []
+        distances =[]
+
+        for indices in indices_list:
+            idx0, idx1 = indices[0], indices[1]
+            symb_0 = mol.atom_symbol(idx0)
+            symb_1 = mol.atom_symbol(idx1)
+            coord_0 = mol.atom_coord(idx0)  
+            coord_1 = mol.atom_coord(idx1)
+            
+            atoms_0.append(symb_0)
+            atoms_1.append(symb_1)
+            distances.append(np.linalg.norm(coord_1 - coord_0))
+        
+        return atoms0, atoms1, distances
+
+    @staticmethod
+    def find_mo_orientation_vectors(indices_list):
+
+        """
+        Find the orientations(vectors) of the localized molecular orbitals
+
+        Args:
+            indices_list: List(List[int])
+                The indexes of the atoms on which the localized molecular orbital is centered on, sorted by population percentage
+
+        Returns:
+            List[numpy.ndarray]:
+                mo_orientation_vectors: vectors describing the orientation of the localized MOs
+        """
+
+        mo_orientation_vectors = []
+
+        for indices in indices_list:
+            idx0, idx1 = indices[0], indices[1]
+            coord_0 = mol.atom_coord(idx0)  
+            coord_1 = mol.atom_coord(idx1)
+            mo_orientation_vectors.append(coord_1 - coord_0)
+        
+        return mo_orientation_vectors
+
+    @staticmethod
+    def find_mo_rotation_angles(mo_orientation_vectors):
+
+        """
+        Find angle of rotation for the MOs to be aligned with the z-axis
+
+        Args:
+            mo_orientation_vectors: List[numpy.ndarray]
+                vectors describing the orientation of the localized MOs
+
+        Returns:
+            List[float]:
+                angles: The rotation angles for each MO
+        """
+
+        angles = []
+
+        for vector in mo_orientation_vectors:
+            angle = np.arccos(np.dot(np.array[0,0,1], vector)/np.linalg.norm(vector))
+            angles.append(angle)
+        
+        return angles
 
     @staticmethod
     def population_analysis(mol, C_loc, mf):
@@ -73,10 +142,8 @@ class MoleculeFeatureExtractor:
                 Mean-field (SCF) calculation result.
 
         Returns:
-            Tuple([List[str], List[str], List[float]]):
-                atoms_0: list of most-contributing atom symbols per orbital.
-                atoms_1: list of second-most -contributing atom symbols per orb.
-                distances: list of distances between those atom pairs.
+            List([List[int]):
+                indices_list: list with the indexes of atoms on which the orbitals are mainly cenetered on
         """
 
         # Get overlap matrix
@@ -86,9 +153,7 @@ class MoleculeFeatureExtractor:
         n_aos = mol.nao
         n_atoms = mol.natm
 
-        atoms_0 = []
-        atoms_1 = []
-        distances = []
+        indices_list = []
         
         for i in range(C_loc.shape[1]):
             c = C_loc[:, i] # i-th localized orbital
@@ -103,17 +168,34 @@ class MoleculeFeatureExtractor:
                         pop_per_atom[A] += c[mu] * c[nu] * S[mu, nu]
 
             indices = pop_per_atom.argsort()[-2:][::-1]
-            idx0, idx1 = indices[0], indices[1]
-            symb_0 = mol.atom_symbol(idx0)
-            symb_1 = mol.atom_symbol(idx1)
-            coord_0 = mol.atom_coord(idx0)  
-            coord_1 = mol.atom_coord(idx1)
+            indices_list.append(indices)
+
             
-            atoms_0.append(symb_0)
-            atoms_1.append(symb_1)
-            distances.append(np.linalg.norm(coord_1 - coord_0))
-            
-        return atoms_0, atoms_1, distances
+        return indices_list
+
+    @staticmethod
+    def rotate_orbitals(mol, C_loc, mf):
+
+        """
+        Rotate molecular orbital (MO) coefficients so that the localized orbitals align along the z-axis.
+
+        Args:
+            mol: pyscf.gto.Mole
+                The molecule object containing atomic and basis set information.
+            C_loc: numpy.ndarray
+                Localized molecular orbital coefficient matrix.
+            mf: pyscf.scf.hf.SCF
+                Mean-field (SCF) calculation object containing orbital information.
+
+        Returns:
+            numpy.ndarray:
+                rot_C_loc: The rotated molecular orbital coefficient matrix, aligned along the z-axis.
+        """
+
+        indices_list = MoleculeFeatureExtractor.population_analysis(mol, C_loc, mf)
+        vectors = MoleculeFeatureExtractor.find_mo_orientation_vectors(indices_list)
+        angles = MoleculeFeatureExtractor.find_mo_rotation_angles(vectors)
+        
 
     @staticmethod
     def determine_orbital_type(mol, C_loc):
@@ -129,7 +211,7 @@ class MoleculeFeatureExtractor:
                 localized molecular orbitals coefficients.
             
         Returns:
-            list of str:
+            List[str]:
                 labels: Labels of the type of MO (σ, π, δ, or mixed).
         """
 
