@@ -195,7 +195,12 @@ class MoleculeFeatureExtractor:
         indices_list = MoleculeFeatureExtractor.population_analysis(mol, C_loc, mf)
         vectors = MoleculeFeatureExtractor.find_mo_orientation_vectors(indices_list)
         angles = MoleculeFeatureExtractor.find_mo_rotation_angles(vectors)
+
+        # i think that we obtain shells from pyscf somehow
+        for i in range(C_loc.shape[1]):
+            C_loc[:,i] = rotate_coeffs(C_loc, , angles[i])
         
+        return  C_loc
 
     @staticmethod
     def determine_orbital_type(mol, C_loc):
