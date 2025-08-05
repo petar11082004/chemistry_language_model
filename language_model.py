@@ -107,7 +107,13 @@ class MoleculeFeatureExtractor:
             indices = pop_per_atom.argsort()[-2:][::-1]
             indices_list.append(indices)
 
-            
+            print('##### pop per atom #####')
+            print(pop_per_atom)
+            print('\n')
+
+        print('##### indices #####')
+        print(indices_list)
+        print('\n')
         return indices_list
 
     @staticmethod
@@ -340,9 +346,11 @@ class MoleculeFeatureExtractor:
 
 mol = gto.Mole()
 mol.atom ='''
-O1	0.0000	0.0000	0.1173
-H2	0.0000	0.7572	-0.4692
-H3	0.0000	-0.7572	-0.4692
+C1	0.0000	0.0000	0.0000
+H2	0.6276	0.6276	0.6276
+H3	0.6276	-0.6276	-0.6276
+H4	-0.6276	0.6276	-0.6276
+H5	-0.6276	-0.6276	0.6276
 '''
 
 mol.unit = 'Angstrom'

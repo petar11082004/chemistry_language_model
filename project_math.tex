@@ -8,6 +8,10 @@
 \usepackage{tcolorbox}
 \usepackage{minted}
 \geometry{margin=1in}
+\documentclass{article}
+\usepackage{tikz}
+\usepackage{amsmath}
+\usepackage{tikz-3dplot}  % for 3D coordinate support
 
 \title{Chemistry Summer Project}
 \author{pp583}
@@ -108,9 +112,6 @@ lz_3comp = moleintor.getints('int1e_cg_irxp_sph',
 lz_matrix = lz_3comp[2]
 
 \end{minted}
-\begin{tcolorbox}[colback=blue!5!white, colframe=red!75!black, title=Important Note]
-For now we work only with MOs that are centered on two atoms
-\end{tcolorbox}
 
 For the computation of the expectation values of $\hat{L}_z$, all molecular orbitals must be aligned along the \textbf{z-axis}. To achieve this, we use the \verb|rotate_coeffs| function from \verb|rotate.py| in the \verb|revqcmagic| repository.
 
@@ -118,16 +119,76 @@ This function requires the following inputs:
 \begin{itemize}
     \item The \textbf{localized MO coefficient matrix}
     \item The \textbf{basis shell structure}, which can be extracted from the \verb|mol| object in \textbf{PySCF}
-    \item The \textbf{rotation angle and axis}, which are determined by identifying the atoms on which each orbital is localized and computing the orientation of the orbital. The required rotation to align this orientation vector with the z-axis is then applied.
+    \item The angle of rotation \textbf{ and the axis}, which are determined by identifying the atoms on which each orbital is localized and computing the orientation of the orbital. The required rotation to align this orientation vector with the z-axis is then applied.
 \end{itemize}
 
-By rotating each orbital into the z-axis direction, we ensure a consistent frame for computing $\langle \hat{L}_z \rangle$ values.
+By rotating each orbital in the z-axis direction, we ensure a consistent frame for computing $\langle \hat{L}_z \rangle$ values.
+
+\begin{tcolorbox}[colback=blue!5!white, colframe=brown!75!black, title=Important Note]
+For MOs that are centered on 2 atoms.
+\end{tcolorbox}
 
 To obtain the angle of rotation we simply need to find the angle between the z-axis($\textbf{$\hat{z}$}$) and the line connecting the two atoms on which the MOs are centered($\textbf{r}$):
 
 \[
 \theta = \cos^{-1}\left( \frac{ \mathbf{r} \cdot \hat{\mathbf{z}} }{ \left| \mathbf{r} \right| } \right)
 \]
+
+\begin{tcolorbox}[colback=blue!5!white, colframe=brown!75!black, title=Important Note]
+For MOs that are centered on 3 atoms.
+\end{tcolorbox}
+
+To obtain the angle of rotation we simply need to find the angle between the z-axis($\textbf{$\hat{z}$}$) and the normal($\textbf{$\hat{n}$}$) to the plane formed by the 3 atoms on which the MO is centered.
+
+\begin{center}
+\begin{tikzpicture}[tdplot_main_coords, scale=1.2]
+
+  % Atom positions in 3D
+  \coordinate (A) at (0,0,0);
+  \coordinate (B) at (2,1,0);
+  \coordinate (C) at (4,0,1);
+
+  % Draw atoms as spheres with labels
+  \foreach \pos/\name in {A/A, B/B, C/C} {
+    \shade[ball color=white] (\pos) circle (0.15);
+    \node[below right] at (\pos) {\name};
+  }
+
+  % Draw triangle ABC
+  \draw[dashed] (A) -- (B) -- (C) -- cycle;
+
+  % Approximate center of the triangle (for vector origins)
+  \coordinate (Center) at (2,0.33,0.33);
+
+  % Normal vector from triangle plane
+  \coordinate (Normal) at ($(Center)+(1,1,1)$);
+  \draw[->, thick, red] (Center) -- (Normal) node[above right] {$\mathbf{\hat{z}}$};
+
+  % z-axis from same origin
+  \draw[->, thick, blue] (Center) -- ++(-1/2/1.87,3/2/1.87,-1/1.87) node[above] {$\mathbf{\hat{n}}$};
+
+  % Angle theta between normal and z-axis
+  \tdplotdrawarc[->]{(Center)}{0.3}{90}{45}{anchor=south}{$\theta$}
+
+\end{tikzpicture}
+\end{center}
+
+we calculate $\mathbf{\hat{n}}$ by:
+
+\[
+\mathbf{n} = \vec{AC} \times \vec{AB}
+\]
+\[
+\mathbf{\hat{n}} = \frac{\mathbf{n}}{|{\mathbf{n}}|}
+\]
+
+then we find the angle of rotation $\theta$ as:
+
+\[
+\theta = \cos^{-1}\left({ \mathbf{\hat{n}} \cdot \hat{\mathbf{z}} }\right)
+\]
+
+This way we align $\mathbf{\hat{n}}$ with the z-axis and the MO lies in the xy-plane.
 
 \end{itemize}
 
