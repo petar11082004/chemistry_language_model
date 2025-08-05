@@ -12,12 +12,14 @@ from qcmagic.core.drivers.statetools.rotate import rotate_coeffs
 from qcmagic.auxiliary.linearalgebra3d import Vector3D
 from qcmagic.core.drivers.statetools.rotate import rotate_state
 from qcmagic.interfaces.converters.pyscf import scf_to_state, configuration_to_mol
+from qcmagic.core.cspace.basis.basisshell import BasisType
+
     
 class MoleculeFeatureExtractor:
 
     def __init__(self, mol):
         self.mol = mol
-
+    
     @staticmethod
     def localize_orbitals_separately(mol, mo_coeff, mo_occ):
 
@@ -52,11 +54,6 @@ class MoleculeFeatureExtractor:
 
         localized_occupied_orbitals_coeffs = localized_occupied_orbitals_method.kernel()
         localized_virtual_orbitals_coeffs = localized_virtual_orbitals_method.kernel()
-
-        #print(f"localized_occupied_orbitals_coeffs shape {localized_occupied_orbitals_coeffs.shape}")
-        #print(f"localized_virtual_orbitals_coeffs.shape {localized_virtual_orbitals_coeffs.shape}")
-        #print(f"np.linalg.pinv(occupied_orbitals_coeffs): {np.linalg.pinv(occupied_orbitals_coeffs).shape}")
-        #print(f"np.linalg.pinv(virtual_orbitals_coeffs){np.linalg.pinv(virtual_orbitals_coeffs).shape}")
 
         U_occ =  np.linalg.pinv(occupied_orbitals_coeffs) @ localized_occupied_orbitals_coeffs
         U_vir = np.linalg.pinv(virtual_orbitals_coeffs) @ localized_virtual_orbitals_coeffs
@@ -191,7 +188,7 @@ class MoleculeFeatureExtractor:
         angles = []
 
         for vector in mo_orientation_vectors:
-            angle = np.arccos(np.dot(np.array[0,0,1], vector)/np.linalg.norm(vector))
+            angle = np.arccos(np.dot(np.array([0,0,1]), vector)/np.linalg.norm(vector))
             angles.append(angle)
         
         return angles
@@ -221,35 +218,27 @@ class MoleculeFeatureExtractor:
 
         rot_C_loc = []
 
-        # i think that we obtain shells from pyscf somehow
         for i, angle in enumerate(angles):
-
-            mf = scf.RHF(mol) # not sure whether we need this line of code, not sure whether mf is changed throughout this code
+            
+            mf = scf.RHF(mol)
+            mf.mo_coeff = C_loc
             state = scf_to_state(mf)
             config = state.configuration
-
-
             state_rot = rotate_state(state, angle, Vector3D([0,0,1]))
-            config_rot = state_rot.configuration
+    
+            cbs=config.get_subconfiguration("ConvolvedBasisSet")
+            coeffs_rot_pyscf = cbs.convert_coefficient_matrices(
+                                state_rot.coefficients, format_from=BasisType.BT_LIBINT, format_to=BasisType.BT_PYSCF)
 
-
-            mol_new = configuration_to_mol(config_rot)
-            mf_new = scf.RHF(mol_new)
-            
-            rqc_coeff = state_rot.coefficients
-            pyscf_coeff = mf_new.mo_coeff
-
-
-            rot_C_loc.append(rqc_coeff[:, i])
+            rot_C_loc.append(coeffs_rot_pyscf[0][:, i])
                 
         return  np.array(rot_C_loc)
 
     @staticmethod
-    def determine_orbital_type(mol, C_loc):
+    def calculate_mag_lz(mol, C_loc):
 
         """
-        calculate the expectation values of Lz^2 for the molecular orbitals 
-        to determine their character.
+        calculate the expectation values of |Lz| for the molecular orbitals 
 
         Args:
             mol: pyscf.gto.Mole
@@ -258,8 +247,8 @@ class MoleculeFeatureExtractor:
                 localized molecular orbitals coefficients.
             
         Returns:
-            List[str]:
-                labels: Labels of the type of MO (σ, π, δ, or mixed).
+            List[float]:
+                maglz_expect: the expectation values of |Lz|for each MO, when aligned with the z-axis
         """
 
         lz_3comp = gto.moleintor.getints('int1e_cg_irxp_sph', mol._atm, mol._bas, mol._env, comp = 3)
@@ -271,21 +260,7 @@ class MoleculeFeatureExtractor:
         #lz_squared = lz_matrix.conj().T @ lz_matrix 
         maglz_expect = np.diag(C_loc.conj().T @ maglz @ C_loc).real
 
-        labels = []
-        print(f"maglz_expect: {maglz_expect}")
-        for maglz_val in maglz_expect:
-
-            if abs(maglz_val) < 0.2:
-                label = 'σ'
-            elif abs(maglz_val - 1.0) < 0.2:
-                label = 'π'
-            elif abs(maglz_val - 2.0) < 0.2:
-                label = 'δ'
-            else:
-                label = 'mixed'
-
-            labels.append(label)
-        return labels
+        return maglz_expect
 
     @staticmethod
     def calculate_energy(mf, U):
@@ -336,34 +311,38 @@ class MoleculeFeatureExtractor:
         Args:
 
         Returns:
-            Tuple([List[str], List[str], List[float], List[str], List[float]):
+            Tuple([List[str], List[str], List[float], List[float], List[float]):
                 atoms_0: list of most-contributing atom symbols per orbital.
                 atoms_1: list of second-most -contributing atom symbols per orb.
                 distances: list of distances between those atom pairs.
-                labels: Labels of the type of MO (σ, π, δ, or mixed).
+                maglz_expect: the expectation values of |Lz|for each MO, when aligned with the z-axis
                 mo_energies: Energies of the localized MOs.
         """
+
         mf = scf.RHF(self.mol)
         mf.kernel()
         mo_coeff = mf.mo_coeff
         mo_occ = mf.mo_occ
-        C_loc, U = MoleculeFeatureExtractor.localize_orbitals_separately(self.mol, mo_coeff, mo_occ)
-        atoms_0, atoms_1, distances = MoleculeFeatureExtractor.population_analysis(self.mol, C_loc, mf)
-        print(f"atoms 0: {atoms_0}")
-        print(f"atoms 1: {atoms_1}")
-        print(f"distances: {distances}")
-        labels = MoleculeFeatureExtractor.determine_orbital_type(self.mol, C_loc)
-        print(labels)
-        mo_energies = MoleculeFeatureExtractor.calculate_energy(mf, U)
-        MoleculeFeatureExtractor.generate_cube_files(C_loc)
 
-        return atoms_0, atoms_1, distances, labels, mo_energies
+
+        C_loc, U = MoleculeFeatureExtractor.localize_orbitals_separately(self.mol, mo_coeff, mo_occ)
+
+
+        indices_list = MoleculeFeatureExtractor.population_analysis(mol, C_loc, mf)
+        atoms_0, atoms_1, distances = MoleculeFeatureExtractor.find_distances_and_atoms_on_which_MOs_are_centered(mol, indices_list)
+        rot_C_loc = MoleculeFeatureExtractor.rotate_orbitals(self.mol, C_loc, mf)
+        maglz_expect = MoleculeFeatureExtractor.calculate_mag_lz(self.mol, rot_C_loc)
+        mo_energies = MoleculeFeatureExtractor.calculate_energy(mf, U)
+
+        #MoleculeFeatureExtractor.generate_cube_files(C_loc)
+
+        return atoms_0, atoms_1, distances, maglz_expect, mo_energies
 
 mol = gto.Mole()
 mol.atom ='''
-C2	0.0000	0.0000	0.0000
-O3	0.0000	0.0000	1.1621
-O1	0.0000	0.0000	-1.1621
+O1	0.0000	0.0000	0.1173
+H2	0.0000	0.7572	-0.4692
+H3	0.0000	-0.7572	-0.4692
 '''
 
 mol.unit = 'Angstrom'
@@ -373,4 +352,25 @@ mol.spin = 0
 mol.build()
 
 c = MoleculeFeatureExtractor(mol)
-_,_,_,_,_, = c.extract_molecule_features()
+atoms_0, atoms_1, distances, maglz_expect, mo_energies = c.extract_molecule_features()
+
+print("################### atoms_0 ##################")
+print('\n')
+print(atoms_0)
+print('\n')
+print("################### atoms_1 ##################")
+print('\n')
+print(atoms_1)
+print('\n')
+print("################### distances ##################")
+print('\n')
+print(distances)
+print('\n')
+print("################### maglz_expect ##################")
+print('\n')
+print(maglz_expect)
+print('\n')
+print("################### mo_energies ##################")
+print('\n')
+print(mo_energies)
+print('\n')

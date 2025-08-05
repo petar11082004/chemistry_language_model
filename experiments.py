@@ -63,8 +63,6 @@ def test_pyscf_rhf_to_state_H2O_rotate():
 
     assert np.allclose(e_pyscf_new, e_pyscf, rtol=0, atol=1e-12)
 
-test_pyscf_rhf_to_state_H2O_rotate()
-
 
 
 

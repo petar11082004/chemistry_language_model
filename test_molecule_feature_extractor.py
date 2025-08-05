@@ -3,6 +3,12 @@ import numpy as np
 from pyscf import gto, scf
 from language_model import MoleculeFeatureExtractor
 from types import SimpleNamespace
+import sys
+sys.path.append('/home/pp583/revqcmagic')
+from pyscf.scf import addons
+from qcmagic.auxiliary.linearalgebra3d import Vector3D
+from qcmagic.core.drivers.statetools.rotate import rotate_state
+from qcmagic.interfaces.converters.pyscf import scf_to_state, configuration_to_mol
 
 class TestMoleculeFeatureExtractor(unittest.TestCase):
 
@@ -21,12 +27,20 @@ class TestMoleculeFeatureExtractor(unittest.TestCase):
         self.mol.build()
 
         self.mf = scf.RHF(self.mol)
-        self.mf.kernel()
+        self.e_pyscf = self.mf.kernel()
         self.mo_coeff = self.mf.mo_coeff
         self.mo_occ = self.mf.mo_occ
 
         self.C_loc, self.U = MoleculeFeatureExtractor.localize_orbitals_separately(self.mol, self.mo_coeff, self.mo_occ)
     
+    def test_rotate_orbitals(self):
+
+        rot_C_loc = MoleculeFeatureExtractor.rotate_orbitals(self.mol, self.C_loc, self.mf)
+
+        fro_norm_before = np.linalg.norm(self.C_loc, ord='fro')
+        fro_norm_after = np.linalg.norm(rot_C_loc, ord='fro')
+        assert np.isclose(fro_norm_before, fro_norm_after, atol=1e-8)
+
     def test_weighted_sum_energy(self):
         """Test energy calculation for a known linear combination of orbitals"""
 
