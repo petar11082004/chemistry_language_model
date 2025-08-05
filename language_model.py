@@ -49,8 +49,8 @@ class MoleculeFeatureExtractor:
 
         #.pipek.PipekMezey, .edmiston.EdmistonRuedenberg
 
-        localized_occupied_orbitals_method = lo.pipek.PipekMezey(mol, occupied_orbitals_coeffs)
-        localized_virtual_orbitals_method = lo.pipek.PipekMezey(mol, virtual_orbitals_coeffs)        
+        localized_occupied_orbitals_method = lo.edmiston.EdmistonRuedenberg(mol, occupied_orbitals_coeffs)
+        localized_virtual_orbitals_method = lo.edmiston.EdmistonRuedenberg(mol, virtual_orbitals_coeffs)        
 
         localized_occupied_orbitals_coeffs = localized_occupied_orbitals_method.kernel()
         localized_virtual_orbitals_coeffs = localized_virtual_orbitals_method.kernel()
