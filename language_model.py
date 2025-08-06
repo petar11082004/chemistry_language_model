@@ -49,8 +49,8 @@ class MoleculeFeatureExtractor:
 
         #.pipek.PipekMezey, .edmiston.EdmistonRuedenberg
 
-        localized_occupied_orbitals_method = lo.edmiston.EdmistonRuedenberg(mol, occupied_orbitals_coeffs)
-        localized_virtual_orbitals_method = lo.edmiston.EdmistonRuedenberg(mol, virtual_orbitals_coeffs)        
+        localized_occupied_orbitals_method = lo.pipek.PipekMezey(mol, occupied_orbitals_coeffs)
+        localized_virtual_orbitals_method = lo.pipek.PipekMezey(mol, virtual_orbitals_coeffs)        
 
         localized_occupied_orbitals_coeffs = localized_occupied_orbitals_method.kernel()
         localized_virtual_orbitals_coeffs = localized_virtual_orbitals_method.kernel()
@@ -91,19 +91,20 @@ class MoleculeFeatureExtractor:
         n_atoms = mol.natm
 
         indices_list = []
-        
+
+        C_dagger = C_loc.conj().T
+        SC = S @ C_loc
         for i in range(C_loc.shape[1]):
-            c = C_loc[:, i] # i-th localized orbital
+            c_dagger = C_dagger[i, :] # i-th localized orbital
+            sc = SC[:, i]
             pop_per_atom = np.zeros(n_atoms)
 
             for A in range(n_atoms):
                 ao_slice = mol.aoslice_by_atom()[A]
                 p0, p1 = ao_slice[2], ao_slice[3]
 
-                for mu in range(p0, p1):
-                    for nu in range(n_aos):
-                        pop_per_atom[A] += c[mu] * c[nu] * S[mu, nu]
-
+                pop_per_atom[A] = c_dagger[p0:p1] @ sc[p0:p1]
+    
             indices = pop_per_atom.argsort()[-2:][::-1]
             indices_list.append(indices)
 
@@ -305,7 +306,7 @@ class MoleculeFeatureExtractor:
         for mo_index in range(C_loc.shape[1]):
             coeff_vector = C_loc[:, mo_index]
 
-            cube_filename = os.path.join("cube_files", f'CO2mo{mo_index}.cube')
+            cube_filename = os.path.join("cube_files", f'H2Omo{mo_index}.cube')
 
             cubegen.orbital(mol, cube_filename, coeff_vector, nx=80, margin=3.0)
         
@@ -333,6 +334,15 @@ class MoleculeFeatureExtractor:
 
         C_loc, U = MoleculeFeatureExtractor.localize_orbitals_separately(self.mol, mo_coeff, mo_occ)
 
+        print('##### mo_coeff #####')
+        print(mo_coeff)
+        print('\n')
+
+        print('##### C_loc #####')
+        print(C_loc)
+        print('\n')
+
+        MoleculeFeatureExtractor.generate_cube_files(C_loc)
 
         indices_list = MoleculeFeatureExtractor.population_analysis(mol, C_loc, mf)
         atoms_0, atoms_1, distances = MoleculeFeatureExtractor.find_distances_and_atoms_on_which_MOs_are_centered(mol, indices_list)
@@ -340,17 +350,17 @@ class MoleculeFeatureExtractor:
         maglz_expect = MoleculeFeatureExtractor.calculate_mag_lz(self.mol, rot_C_loc)
         mo_energies = MoleculeFeatureExtractor.calculate_energy(mf, U)
 
-        #MoleculeFeatureExtractor.generate_cube_files(C_loc)
 
         return atoms_0, atoms_1, distances, maglz_expect, mo_energies
 
 mol = gto.Mole()
 mol.atom ='''
-C1	0.0000	0.0000	0.0000
-H2	0.6276	0.6276	0.6276
-H3	0.6276	-0.6276	-0.6276
-H4	-0.6276	0.6276	-0.6276
-H5	-0.6276	-0.6276	0.6276
+C1	0.0000	0.0000	0.6695
+C2	0.0000	0.0000	-0.6695
+H3	0.0000	0.9289	1.2321
+H4	0.0000	-0.9289	1.2321
+H5	0.0000	0.9289	-1.2321
+H6	0.0000	-0.9289	-1.2321
 '''
 
 mol.unit = 'Angstrom'

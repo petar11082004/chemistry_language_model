@@ -1,68 +1,105 @@
-"""Tests for :mod:`qcmagic.interfaces.converters.pyscf`.
-"""
-import sys
-sys.path.append('/home/pp583/revqcmagic')
-from pyscf import gto, scf  # type: ignore``
-from pyscf.scf import addons  # type: ignore
+
 import numpy as np
-from qcmagic.auxiliary.linearalgebra3d import Vector3D
-print('done')
-from qcmagic.core.drivers.statetools.rotate import rotate_state
-print('done')
-from qcmagic.interfaces.converters.pyscf import scf_to_state, configuration_to_mol
+from pyscf import gto, scf, lo
+
+# 1. Define molecule
+mol = gto.Mole()
+mol.atom ='''
+C1	0.0000	0.0000	0.0000
+O2	0.0000	0.0000	1.1621
+O3	0.0000	0.0000	-1.1621
+'''
+
+mol.basis = 'sto-3g'
+mol.build()
+
+# 2. Run SCF
+mf = scf.RHF(mol).run()
+mo_coeff = mf.mo_coeff
+S = mf.get_ovlp()
 
 
-def test_pyscf_rhf_to_state_H2O_rotate():
-    r""" Runs pyscf H2O molecule with RHF and imports it into qcmagic.
-         It tests that the energy calculated in qcmagic is the same as pyscf.
-    """
-    h2o_mol = gto.M(
-        atom=(
-            """
-            O	0.0000	0.0000	0.1173
-            H	0.0000	0.7572	-0.4692
-            H	0.0000	-0.7572	-0.4692
-            """
-        ),
-        basis="STO-3G",
-        unit="Angstrom",
-    )
-    rhf_calc = scf.RHF(h2o_mol)
-    e_pyscf = rhf_calc.kernel()
+from scipy.linalg import fractional_matrix_power
 
-    #if you want to modify the coefficients you should do so in rhf_calc BEFORE the conversion to RevQCMagic.
-    #RevQCMagic's Atomic Orbital Order may differ from pyscf's.
+def population_lowdin(mol, mo_coeff, S):
+    # Löwdin orthogonalization: S^(-1/2)
+    S_inv_sqrt = fractional_matrix_power(S, -0.5)
+    mo_orth = S_inv_sqrt @ mo_coeff  # Transform MO coeffs to orthogonal AO basis
 
-    #e.g. rhf_calc.mo_coeff = ...
+    ao_loc = mol.aoslice_by_atom()
+    nmo = mo_coeff.shape[1]
+    natm = mol.natm
+    population = np.zeros((nmo, natm))
 
-    state = scf_to_state(rhf_calc)
+    for i in range(nmo):
+        C = mo_orth[:, i]
+        for A in range(natm):
+            p0, p1 = ao_loc[A][2], ao_loc[A][3]
+            pop = np.sum(C.conj().T[p0:p1] @ C[p0:p1])  # Now basis is orthonormal, so dot becomes square norm
+            population[i, A] = pop
 
-
-    config = state.configuration
-    print("Old Energy", e_pyscf, state.energy)
-    print("Old Geom", config.get_subconfiguration("Geometry").structure.all_atoms)
-    print("Old Coeffs", state.coefficients)
-
-
-    state_rot = rotate_state(state,np.pi/4, Vector3D([0,0,1]))
-    config_rot = state_rot.configuration
-
-    print("New Energy", state_rot.energy)
-    print("New Geom", config_rot.get_subconfiguration("Geometry").structure.all_atoms)
-    print("New Coeffs", state_rot.coefficients)
-
-    mol_new = configuration_to_mol(config_rot)
-    rhf_new = scf.RHF(mol_new)
-    e_pyscf_new = rhf_new.kernel()
-
-    print("New Pyscf Energy", e_pyscf_new)
-    print("New Pyscf", rhf_new.mo_coeff)
-
-    rqc_coeff = state_rot.coefficients
-    pyscf_coeff = rhf_new.mo_coeff
-
-    assert np.allclose(e_pyscf_new, e_pyscf, rtol=0, atol=1e-12)
+    population_percent = 100 * population / population.sum(axis=1, keepdims=True)
+    return population_percent
 
 
 
+
+# 3. Function for population analysis
+def population_mulliken(mol, mo_coeff, S):
+    ao_loc = mol.aoslice_by_atom()
+    nmo = mo_coeff.shape[1]
+    natm = mol.natm
+    population = np.zeros((nmo, natm))
+
+    for i in range(nmo):
+        C = mo_coeff[:, i]
+        PC = C @ S
+        for A in range(natm):
+            p0, p1 = ao_loc[A][2], ao_loc[A][3]
+            pop = C[p0:p1] @ PC[p0:p1]
+            population[i, A] = pop
+
+    population_percent = 100 * population / population.sum(axis=1, keepdims=True)
+    return population_percent
+
+def print_population_table(title, pop, mol):
+    natm = mol.natm
+    atom_labels = [mol.atom_symbol(i) for i in range(natm)]
+    header = "MO  " + "  ".join(f"{a:^8}" for a in atom_labels)
+    print(f"\n=== {title} ===")
+    print(header)
+    print("-" * len(header))
+    for i, row in enumerate(pop):
+        line = f"{i:>2}  " + "  ".join(f"{p:8.2f}" for p in row)
+        print(line)
+
+# 4. Canonical MO population analysis
+pop_canonical = population_lowdin(mol, mo_coeff, S)
+
+# 5. Localize MOs using Edmiston–Ruedenberg
+localizer = lo.edmiston.EdmistonRuedenberg(mol, mo_coeff)
+mo_loc = localizer.kernel()
+
+# 6. Localized MO population analysis
+pop_localized = population_lowdin(mol, mo_loc, S)
+
+print('########### Lowdin ########')
+# 8. Print results
+print_population_table("Canonical MO Population Analysis (%)", pop_canonical, mol)
+print_population_table("Localized (Edmiston–Ruedenberg) MO Population Analysis (%)", pop_localized, mol)
+
+
+pop_canonical = population_mulliken(mol, mo_coeff, S)
+
+# 5. Localize MOs using Edmiston–Ruedenberg
+localizer = lo.edmiston.EdmistonRuedenberg(mol, mo_coeff)
+mo_loc = localizer.kernel()
+
+# 6. Localized MO population analysis
+pop_localized = population_mulliken(mol, mo_loc, S)
+
+print('########### Mulliken ########')
+# 8. Print results
+print_population_table("Canonical MO Population Analysis (%)", pop_canonical, mol)
+print_population_table("Localized (Edmiston–Ruedenberg) MO Population Analysis (%)", pop_localized, mol)
 
