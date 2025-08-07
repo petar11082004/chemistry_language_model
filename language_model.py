@@ -1,4 +1,4 @@
-# import pyscf
+import pyscf
 import sys
 sys.path.append('/home/pp583/revqcmagic')
 from pyscf import gto, scf, cc
@@ -13,7 +13,8 @@ from qcmagic.auxiliary.linearalgebra3d import Vector3D
 from qcmagic.core.drivers.statetools.rotate import rotate_state
 from qcmagic.interfaces.converters.pyscf import scf_to_state, configuration_to_mol
 from qcmagic.core.cspace.basis.basisshell import BasisType
-
+from scipy.linalg import expm
+import math
     
 class MoleculeFeatureExtractor:
 
@@ -47,16 +48,39 @@ class MoleculeFeatureExtractor:
         occupied_orbitals_coeffs = mo_coeff[:, occ_idx]
         virtual_orbitals_coeffs = mo_coeff[:, vir_idx]
 
+        n_occ = occupied_orbitals_coeffs.shape[1]
+        n_vir = virtual_orbitals_coeffs.shape[1]
+
+        # 4. Create small real antisymmetric matrices A_occ, A_vir
+        np.random.seed(42)
+        A_occ = np.random.randn(n_occ, n_occ)
+        A_vir = np.random.randn(n_vir, n_vir)
+        A_occ = A_occ - A_occ.T  # make it antisymmetric
+        A_vir = A_vir - A_vir.T  # make it antisymmetric
+        A_occ*= 0.5  # scale to make rotation small
+        A_vir*= 0.5  # scale to make rotation small
+
+        # 5. Compute real orthogonal matrix Q = exp(A)
+        Q_occ = expm(A_occ)  # real orthogonal
+        Q_vir = expm(A_vir) #real orthogonal
+
+        # 6. Apply rotation: C' = C @ Q
+        occupied_orbitals_coeffs_rotated = occupied_orbitals_coeffs @ Q_occ
+        virtual_orbitals_coeffs_rotated = virtual_orbitals_coeffs @ Q_vir
+
         #.pipek.PipekMezey, .edmiston.EdmistonRuedenberg
 
-        localized_occupied_orbitals_method = lo.pipek.PipekMezey(mol, occupied_orbitals_coeffs)
-        localized_virtual_orbitals_method = lo.pipek.PipekMezey(mol, virtual_orbitals_coeffs)        
+        localized_occupied_orbitals_method = lo.pipek.PipekMezey(mol, occupied_orbitals_coeffs_rotated)
+        localized_virtual_orbitals_method = lo.pipek.PipekMezey(mol, virtual_orbitals_coeffs_rotated)
+
+        localized_occupied_orbitals_method.init_guess = None
+        localized_virtual_orbitals_method.init_guess = None        
 
         localized_occupied_orbitals_coeffs = localized_occupied_orbitals_method.kernel()
         localized_virtual_orbitals_coeffs = localized_virtual_orbitals_method.kernel()
 
-        U_occ =  np.linalg.pinv(occupied_orbitals_coeffs) @ localized_occupied_orbitals_coeffs
-        U_vir = np.linalg.pinv(virtual_orbitals_coeffs) @ localized_virtual_orbitals_coeffs
+        U_occ =  np.linalg.pinv(occupied_orbitals_coeffs_rotated) @ localized_occupied_orbitals_coeffs
+        U_vir = np.linalg.pinv(virtual_orbitals_coeffs_rotated) @ localized_virtual_orbitals_coeffs
         U = sp.linalg.block_diag(U_occ, U_vir)
 
         loc_mo_coeffs = np.hstack([localized_occupied_orbitals_coeffs, localized_virtual_orbitals_coeffs])
@@ -104,14 +128,23 @@ class MoleculeFeatureExtractor:
                 p0, p1 = ao_slice[2], ao_slice[3]
 
                 pop_per_atom[A] = c_dagger[p0:p1] @ sc[p0:p1]
-    
-            indices = pop_per_atom.argsort()[-2:][::-1]
+
+            counter = 0
+            for i in range(len(pop_per_atom)):
+                if pop_per_atom[i]>=0.15:
+                    counter += 1
+            
+            if counter > 3:
+                counter = 3
+            indices = pop_per_atom.argsort()[-counter:][::-1]
+            
             indices_list.append(indices)
 
             print('##### pop per atom #####')
             print(pop_per_atom)
             print('\n')
 
+        
         print('##### indices #####')
         print(indices_list)
         print('\n')
@@ -137,20 +170,51 @@ class MoleculeFeatureExtractor:
         
         atoms_0 = []
         atoms_1 = []
-        distances =[]
+        atoms_2 = []
+        R_01 =[]
+        R_12 = []
+        R_02 = []
 
         for indices in indices_list:
-            idx0, idx1 = indices[0], indices[1]
-            symb_0 = mol.atom_symbol(idx0)
-            symb_1 = mol.atom_symbol(idx1)
-            coord_0 = mol.atom_coord(idx0)  
-            coord_1 = mol.atom_coord(idx1)
+
+            if len(indices)== 1:
+                idx0 = indices[0]
+                symb_0 = mol.atom_symbol(idx0)
+                atoms_0.append(symb_0)
+                atoms_1.append(0)
+                atoms_2.append(0)
+                R_01.append(np.inf)
+                R_12.append(np.inf)
+                R_02.append(np.inf)
             
-            atoms_0.append(symb_0)
-            atoms_1.append(symb_1)
-            distances.append(np.linalg.norm(coord_1 - coord_0))
+            elif len(indices) == 2:
+                idx0, idx1 = indices[0], indices[1]
+                symb_0 = mol.atom_symbol(idx0)
+                symb_1 = mol.atom_symbol(idx1)
+                coord_0 = mol.atom_coord(idx0)  
+                coord_1 = mol.atom_coord(idx1)
+                
+                atoms_0.append(symb_0)
+                atoms_1.append(symb_1)
+                atoms_2.append(0)
+                R_01.append(np.linalg.norm(coord_1 - coord_0))
+            
+            elif len(indices) == 3:
+                idx0, idx1, idx2 = indices[0], indices[1], indices[2]
+                symb_0 = mol.atom_symbol(idx0)
+                symb_1 = mol.atom_symbol(idx1)
+                symb_2 = mol.atom_symbol(idx2)
+                coord_0 = mol.atom_coord(idx0)  
+                coord_1 = mol.atom_coord(idx1)
+                coord_2 = mol.atom_coord(idx2)
+                atoms_0.append(symb_0)
+                atoms_1.append(symb_1)
+                atoms_2.append(symb_2)
+                R_01.append(np.linalg.norm(coord_1 - coord_0))
+                R_12.append(np.linalg.norm(coord_2 - coord_1))
+                R_02.append(np.linalg.norm(coord_2 - coord_0))
         
-        return atoms_0, atoms_1, distances
+        return atoms_0, atoms_1, atoms_2, R_01, R_02, R_12
 
     @staticmethod
     def find_mo_orientation_vectors(indices_list):
@@ -170,10 +234,23 @@ class MoleculeFeatureExtractor:
         mo_orientation_vectors = []
 
         for indices in indices_list:
-            idx0, idx1 = indices[0], indices[1]
-            coord_0 = mol.atom_coord(idx0)  
-            coord_1 = mol.atom_coord(idx1)
-            mo_orientation_vectors.append(coord_1 - coord_0)
+            if len(indices) == 1:
+                mo_orientation_vectors.append(np.array([0, 0, 0]))
+            if len(indices) == 2:
+                idx0, idx1 = indices[0], indices[1]
+                coord_0 = mol.atom_coord(idx0)  
+                coord_1 = mol.atom_coord(idx1)
+                mo_orientation_vectors.append(coord_1 - coord_0)
+            
+            elif len(indices) == 3:
+                idx0, idx1, idx2 = indices[0], indices[1], indices[2]
+                coord_0 = mol.atom_coord(idx0)  
+                coord_1 = mol.atom_coord(idx1)
+                coord_2 = mol.atom_coord(idx2)
+                vecotr_01 = coord_1 - coord_0
+                vector_02 = coord_2 - coord_0
+                orientation_vector = np.cross(vecotr_01, vector_02)
+                mo_orientation_vectors.append(orientation_vector)
         
         return mo_orientation_vectors
 
@@ -195,8 +272,12 @@ class MoleculeFeatureExtractor:
         angles = []
 
         for vector in mo_orientation_vectors:
-            angle = np.arccos(np.dot(np.array([0,0,1]), vector)/np.linalg.norm(vector))
-            angles.append(angle)
+
+            if vector != np.array([0, 0, 0]):
+                angle = np.arccos(np.dot(np.array([0,0,1]), vector)/np.linalg.norm(vector))
+                angles.append(angle)
+            else:
+                angles.append(math.radians(0))
         
         return angles
 
@@ -242,7 +323,7 @@ class MoleculeFeatureExtractor:
         return  np.array(rot_C_loc)
 
     @staticmethod
-    def calculate_mag_lz(mol, C_loc):
+    def calculate_mag_lz(mol, rot_C_loc):
 
         """
         calculate the expectation values of |Lz| for the molecular orbitals 
@@ -250,7 +331,7 @@ class MoleculeFeatureExtractor:
         Args:
             mol: pyscf.gto.Mole
                 Molecule object.
-            C_loc: numpy.ndarray
+            rot_C_loc: numpy.ndarray
                 localized molecular orbitals coefficients.
             
         Returns:
@@ -265,7 +346,7 @@ class MoleculeFeatureExtractor:
         maglz = evecs @ np.diag(np.abs(evals)) @ evecs.T
 
         #lz_squared = lz_matrix.conj().T @ lz_matrix 
-        maglz_expect = np.diag(C_loc.conj().T @ maglz @ C_loc).real
+        maglz_expect = np.diag(rot_C_loc.conj().T @ maglz @ rot_C_loc).real
 
         return maglz_expect
 
@@ -306,7 +387,7 @@ class MoleculeFeatureExtractor:
         for mo_index in range(C_loc.shape[1]):
             coeff_vector = C_loc[:, mo_index]
 
-            cube_filename = os.path.join("cube_files", f'H2Omo{mo_index}.cube')
+            cube_filename = os.path.join("cube_files", f'mo{mo_index}.cube')
 
             cubegen.orbital(mol, cube_filename, coeff_vector, nx=80, margin=3.0)
         
@@ -345,16 +426,35 @@ class MoleculeFeatureExtractor:
         MoleculeFeatureExtractor.generate_cube_files(C_loc)
 
         indices_list = MoleculeFeatureExtractor.population_analysis(mol, C_loc, mf)
-        atoms_0, atoms_1, distances = MoleculeFeatureExtractor.find_distances_and_atoms_on_which_MOs_are_centered(mol, indices_list)
+        atoms_0, atoms_1, atoms_2, R_01, R_02, R_12 = MoleculeFeatureExtractor.find_distances_and_atoms_on_which_MOs_are_centered(mol, indices_list)
         rot_C_loc = MoleculeFeatureExtractor.rotate_orbitals(self.mol, C_loc, mf)
         maglz_expect = MoleculeFeatureExtractor.calculate_mag_lz(self.mol, rot_C_loc)
         mo_energies = MoleculeFeatureExtractor.calculate_energy(mf, U)
 
 
-        return atoms_0, atoms_1, distances, maglz_expect, mo_energies
+        return np.array([maglz_expect, atoms_0, atoms_1, atoms_2, R_01, R_02, R_12, mo_energies])
 
 mol = gto.Mole()
-mol.atom ='''
+mol.atom = '''
+C2 0.0000 0.0000 0.0000
+O3 0.0000 0.0000 1.1621
+O1 0.0000 0.0000 -1.1621
+'''
+
+'''
+C1	0.0000	0.0000	0.0000
+H2	0.6276	0.6276	0.6276
+H3	0.6276	-0.6276	-0.6276
+H4	-0.6276	0.6276	-0.6276
+H5	-0.6276	-0.6276	0.6276
+'''
+
+'''
+O1	0.0000	0.0000	0.1173
+H2	0.0000	0.7572	-0.4692
+H3	0.0000	-0.7572	-0.4692
+'''
+'''
 C1	0.0000	0.0000	0.6695
 C2	0.0000	0.0000	-0.6695
 H3	0.0000	0.9289	1.2321
@@ -370,25 +470,4 @@ mol.spin = 0
 mol.build()
 
 c = MoleculeFeatureExtractor(mol)
-atoms_0, atoms_1, distances, maglz_expect, mo_energies = c.extract_molecule_features()
-
-print("################### atoms_0 ##################")
-print('\n')
-print(atoms_0)
-print('\n')
-print("################### atoms_1 ##################")
-print('\n')
-print(atoms_1)
-print('\n')
-print("################### distances ##################")
-print('\n')
-print(distances)
-print('\n')
-print("################### maglz_expect ##################")
-print('\n')
-print(maglz_expect)
-print('\n')
-print("################### mo_energies ##################")
-print('\n')
-print(mo_energies)
-print('\n')
+print(c.extract_molecule_features())
