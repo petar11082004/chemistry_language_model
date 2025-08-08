@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
 from pyscf import gto, scf
-from language_model import MoleculeFeatureExtractor
+from molecule_feature_extractor import MoleculeFeatureExtractor
 from types import SimpleNamespace
 import sys
 sys.path.append('/home/pp583/revqcmagic')

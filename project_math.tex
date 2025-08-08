@@ -74,7 +74,7 @@
 
     \item We define the \textbf{atomic population} of orbital \( \psi_i \) on atom \( A \) as:
     \[
-    q_A = \sum_{\mu \in A} \sum_{\nu} \widetilde{C}_{\mu i}^{*} \widetilde{C}_{\nu i} S_{\mu \nu} = \sum_{\mu \in A} \sum_{\nu} \widetilde{C}_{i \mu}^{\dagger} S_{\mu \nu} \widetilde{C}_{\nu i}
+    q_A = \sum_{\mu \in A} \sum_{\nu} \widetilde{C}_{\mu i}^{*} \widetilde{C}_{\nu i} S_{\mu \nu} = \sum_{\mu \in A} \sum_{\nu} \widetilde{C}_{i \mu}^{\dagger} \widetilde{C}_{i \nu}^{T} S_{\nu \mu}^{T} = \sum_{\mu \in A} \widetilde{C}_{i \mu}^{\dagger} (\widetilde{C}^{T} S^{T})_{i \mu} = \sum_{\mu \in A} \widetilde{C}_{i \mu}^{\dagger} (\widetilde{C}^{T} S^{T})_{\mu i}^{T} = \sum_{\mu \in A} \widetilde{C}_{i \mu}^{\dagger} (S \widetilde{C})_{\mu i}
     \]
 
     \item By looking at \( q_A \) for the different atoms, we can determine which atoms the orbitals are centered on (along with knowing interatomic distances).
@@ -85,15 +85,18 @@
 \begin{itemize}
     \item The expectation value is:
     \[
-    \bra{\widetilde{\psi}_i} {\hat{L}_z}\ket{\widetilde{\psi}_i} = \sum_{\mu,\nu} \widetilde{C}_{\mu i}^{*} \bra{\phi_\mu} \hat{L}_z \ket{\phi_\nu} \widetilde{C}_{\nu i} = \sum_{\mu,\nu} \widetilde{C}_{i \mu}^{\dagger} L_{\mu \nu} \widetilde{C}_{\nu i} = (\widetilde{C}^{\dagger} L \widetilde{C})_{ii}
+    \bra{\widetilde{\psi}_i} {|\hat{L}_z|}\ket{\widetilde{\psi}_i} = \sum_{\mu,\nu} \widetilde{C}_{\mu i}^{*} \bra{\phi_\mu} |\hat{L}_z| \ket{\phi_\nu} \widetilde{C}_{\nu i} = \sum_{\mu,\nu} \widetilde{C}_{i \mu}^{\dagger} |L_{\mu \nu}| \widetilde{C}_{\nu i} = (\widetilde{C}^{\dagger} |L \rvert \widetilde{C})_{ii}
     \]
-    where \( L \) is the matrix representation of the angular momentum operator \(\hat{L}_z\) in the basis \( \{ \phi_\mu \} \) 
+    where \( |L| \) is the matrix representation of the angular momentum operator \(|\hat{L}_z|\) in the basis \( \{ \phi_\mu \} \) 
 
-    However, since the matrix representation of $\hat{L}_z$ in a real-valued atomic orbital basis has vanishing diagonal elements, it is more appropriate to use the squared operator $\hat{L}_z^2$ to characterize the angular momentum of molecular orbitals.
-
+    We obtain \( |L| \) by diagonalizing L:
     \[
-    \bra{\widetilde{\psi}_i} {\hat{L}_z^{2}}\ket{\widetilde{\psi}_i} = \sum_{\mu,\nu} \widetilde{C}_{\mu i}^{*} \bra{\phi_\mu} \hat{L}_z^{2} \ket{\phi_\nu} \widetilde{C}_{\nu i} = \sum_{\mu,\nu} \widetilde{C}_{\mu i}^{*} \sum_{\lambda}( \bra{\phi_\mu} \hat{L}_z \ket{\phi_\lambda} \bra{\phi_\lambda} \hat{L}_z\ket{\phi_\nu}) \widetilde{C}_{\nu i} = \sum_{\mu,\nu} \widetilde{C}_{i \mu}^{\dagger} L_{\mu \nu}^2 \widetilde{C}_{\nu i} = (\widetilde{C}^{\dagger} L^2 \widetilde{C})_{ii}
-    \]
+    L = U\Lambda U^{\dagger}
+    \] 
+    then we take the absolute values of the eigenvalues of L $|\lambda_1|, |\lambda_2|, ... |\lambda_n|$ and we construct $|\Lambda|$, then we construct $|L|$:
+    \[
+    |L| = U \lvert \Lambda \rvert U^{\dagger}
+    \] 
 
     The \verb|pyscf| code for obtaining the $\hat{L}_z$ matrix is:
 
@@ -113,7 +116,7 @@ lz_matrix = lz_3comp[2]
 
 \end{minted}
 
-For the computation of the expectation values of $\hat{L}_z$, all molecular orbitals must be aligned along the \textbf{z-axis}. To achieve this, we use the \verb|rotate_coeffs| function from \verb|rotate.py| in the \verb|revqcmagic| repository.
+For the computation of the expectation values of $|\hat{L}_z|$, all molecular orbitals must be aligned along the \textbf{z-axis}. To achieve this, we use the \verb|rotate_coeffs| function from \verb|rotate.py| in the \verb|revqcmagic| repository.
 
 This function requires the following inputs:
 \begin{itemize}
@@ -122,7 +125,7 @@ This function requires the following inputs:
     \item The angle of rotation \textbf{ and the axis}, which are determined by identifying the atoms on which each orbital is localized and computing the orientation of the orbital. The required rotation to align this orientation vector with the z-axis is then applied.
 \end{itemize}
 
-By rotating each orbital in the z-axis direction, we ensure a consistent frame for computing $\langle \hat{L}_z \rangle$ values.
+By rotating each orbital in the z-axis direction, we ensure a consistent frame for computing $\langle |\hat{L}_z| \rangle$ values.
 
 \begin{tcolorbox}[colback=blue!5!white, colframe=brown!75!black, title=Important Note]
 For MOs that are centered on 2 atoms.
@@ -178,6 +181,7 @@ we calculate $\mathbf{\hat{n}}$ by:
 \[
 \mathbf{n} = \vec{AC} \times \vec{AB}
 \]
+
 \[
 \mathbf{\hat{n}} = \frac{\mathbf{n}}{|{\mathbf{n}}|}
 \]
