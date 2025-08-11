@@ -130,13 +130,8 @@ class MoleculeFeatureExtractor:
 
                 pop_per_atom[A] = c_dagger[p0:p1] @ sc[p0:p1]
 
-            counter = 0
-            for i in range(len(pop_per_atom)):
-                if pop_per_atom[i]>=0.15:
-                    counter += 1
-            
-            if counter > 3:
-                counter = 3
+            counter = sum(pop_per_atom >= 0.15)
+            counter = min(max(counter, 1), 3) 
             indices = pop_per_atom.argsort()[-counter:][::-1]
             
             indices_list.append(indices)
@@ -212,7 +207,7 @@ class MoleculeFeatureExtractor:
         return charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12
 
     @staticmethod
-    def find_mo_orientation_vectors(indices_list):
+    def find_mo_orientation_vectors(indices_list, mol):
 
         """
         Find the orientations (vectors) of the localized molecular orbitals
@@ -296,10 +291,13 @@ class MoleculeFeatureExtractor:
         """
 
         indices_list = MoleculeFeatureExtractor.population_analysis(mol, C_loc, mf)
-        vectors = MoleculeFeatureExtractor.find_mo_orientation_vectors(indices_list)
+        vectors = MoleculeFeatureExtractor.find_mo_orientation_vectors(indices_list, mol)
         angles = MoleculeFeatureExtractor.find_mo_rotation_angles(vectors)
 
         rot_C_loc = []
+        nAO, nMO = C_loc.shape
+        rot_C_loc = np.zeros((nAO, nMO), dtype=C_loc.dtype)
+
 
         for i, angle in enumerate(angles):
             
@@ -313,7 +311,7 @@ class MoleculeFeatureExtractor:
             coeffs_rot_pyscf = cbs.convert_coefficient_matrices(
                                 state_rot.coefficients, format_from=BasisType.BT_LIBINT, format_to=BasisType.BT_PYSCF)
 
-            rot_C_loc.append(coeffs_rot_pyscf[0][:, i])
+            rot_C_loc[:, i] = coeffs_rot_pyscf[0][:, i]
                 
         return  np.array(rot_C_loc)
 
@@ -367,7 +365,7 @@ class MoleculeFeatureExtractor:
         return loc_mo_energies
     
     @staticmethod
-    def generate_cube_files(C_loc):
+    def generate_cube_files(C_loc, mol):
 
         """
         generate cube files so that we can visualise the molecular orbitals
@@ -409,66 +407,13 @@ class MoleculeFeatureExtractor:
 
         C_loc, U = MoleculeFeatureExtractor.localize_orbitals_separately(self.mol, mo_coeff, mo_occ)
 
-        #MoleculeFeatureExtractor.generate_cube_files(C_loc)
+        MoleculeFeatureExtractor.generate_cube_files(C_loc, self.mol)
 
-        indices_list = MoleculeFeatureExtractor.population_analysis(mol, C_loc, mf)
-        charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12 = MoleculeFeatureExtractor.find_inverse_distances_and_atoms_on_which_MOs_are_centered(mol, indices_list)
+        indices_list = MoleculeFeatureExtractor.population_analysis(self.mol, C_loc, mf)
+        charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12 = MoleculeFeatureExtractor.find_inverse_distances_and_atoms_on_which_MOs_are_centered(self.mol, indices_list)
         rot_C_loc = MoleculeFeatureExtractor.rotate_orbitals(self.mol, C_loc, mf)
         maglz_expect = MoleculeFeatureExtractor.calculate_mag_lz(self.mol, rot_C_loc)
         mo_energies = MoleculeFeatureExtractor.calculate_energy(mf, U)
 
 
         return maglz_expect, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12, mo_energies
-
-mol = gto.Mole()
-mol.atom = '''
-C2 0.0000 0.0000 0.0000
-O3 0.0000 0.0000 1.1621
-O1 0.0000 0.0000 -1.1621
-'''
-
-'''
-C1	0.0000	0.0000	0.6695
-C2	0.0000	0.0000	-0.6695
-H3	0.0000	0.9289	1.2321
-H4	0.0000	-0.9289	1.2321
-H5	0.0000	0.9289	-1.2321
-H6	0.0000	-0.9289	-1.2321
-'''
-
-'''
-C1	0.0000	0.0000	0.0000
-H2	0.6276	0.6276	0.6276
-H3	0.6276	-0.6276	-0.6276
-H4	-0.6276	0.6276	-0.6276
-H5	-0.6276	-0.6276	0.6276
-'''
-
-'''
-O1	0.0000	0.0000	0.1173
-H2	0.0000	0.7572	-0.4692
-H3	0.0000	-0.7572	-0.4692
-'''
-
-mol.unit = 'Angstrom'
-mol.basis = 'sto-3g'
-mol.charge = 0
-mol.spin = 0
-mol.build()
-print('mol atom charges')
-print(mol.atom_charges)
-
-c = MoleculeFeatureExtractor(mol)
-maglz_expect, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12, mo_energies = c.extract_molecule_features()
-
-df = pd.DataFrame({
-    "maglz_expect": maglz_expect,
-    "atoms_0": charges_0,
-    "atoms_1": charges_1,
-    "atoms_2": charges_2,
-    "inv_R_01": inv_R_01,
-    "inv_R_02": inv_R_02,
-    "inv_R_12": inv_R_12,
-    "mo_energies": mo_energies
-})
-print(df)
