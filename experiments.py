@@ -1,134 +1,39 @@
-from pyscf import gto
+from rdkit import Chem
+from rdkit.Chem import rdMolTransforms as T
+from rdkit.Chem import rdDetermineBonds
+import numpy as np
 
-training_molecules = [
-    """
-    H1	0.0000	0.0000	0.0000
-    H2	0.0000	0.0000	0.7414
-    """,
-    """
-    O1	0.0000	0.0000	0.1173
-    H2	0.0000	0.7572	-0.4692
-    H3	0.0000	-0.7572	-0.4692
-    """,
-    """
-    C1	0.0000	0.0000	0.0000
-    H2	0.6276	0.6276	0.6276
-    H3	0.6276	-0.6276	-0.6276
-    H4	-0.6276	0.6276	-0.6276
-    H5	-0.6276	-0.6276	0.6276
-    """,
-    """
-    C1	0.0000	0.0000	0.6695
-    C2	0.0000	0.0000	-0.6695
-    H3	0.0000	0.9289	1.2321
-    H4	0.0000	-0.9289	1.2321
-    H5	0.0000	0.9289	-1.2321
-    H6	0.0000	-0.9289	-1.2321
-    """,
-    """
-    C1	0.0000	0.0000	0.7680
-    C2	0.0000	0.0000	-0.7680
-    H3	-1.0192	0.0000	1.1573
-    H4	0.5096	0.8826	1.1573
-    H5	0.5096	-0.8826	1.1573
-    H6	1.0192	0.0000	-1.1573
-    H7	-0.5096	-0.8826	-1.1573
-    H8	-0.5096	0.8826	-1.1573
-    """,
-    """
-    N1	0.0000	0.0000	0.0000
-    H2	0.0000	-0.9377	-0.3816
-    H3	0.8121	0.4689	-0.3816
-    H4	-0.8121	0.4689	-0.3816
-    """,
-    """
-    C1	0.0000	0.0000	0.0000
-    O2	0.0000	0.0000	1.1621
-    O3	0.0000	0.0000	-1.1621
-    """
-]
-
-training_ions = [
-    """
-    O1	0.0000	0.0000	0.0000
-    H2	0.0000	0.0000	0.9640
-    """
-]
-
-testing_molecules = [
-    """
-    O1	0.0000	0.0000	1.2050
-    C2	0.0000	0.0000	0.0000
-    H3	0.0000	0.9429	-0.5876
-    H4	0.0000	-0.9429	-0.5876
-    """,
-    """
-    C1	1.1879	-0.3829	0.0000
-    C2	0.0000	0.5526	0.0000
-    O3	-1.1867	-0.2472	0.0000
-    H4	-1.9237	0.3850	0.0000
-    H5	2.0985	0.2306	0.0000
-    H6	1.1184	-1.0093	0.8869
-    H7	1.1184	-1.0093	-0.8869
-    H8	-0.0227	1.1812	0.8852
-    H9	-0.0227	1.1812	-0.8852
-    """,
-    """
-    C1	0.0583	0.7129	0.0000	 	
-    N2	0.0583	-0.7726	0.0000	 	
-    H3	-0.9425	1.1529	0.0000	 	
-    H4	0.5877	1.0695	0.8821	 	
-    H5	0.5877	1.0695	-0.8821	 	
-    H6	-0.4953	-1.0804	-0.8165	 	
-    H7	-0.4953	-1.0804	0.8165
-    """,
-    """
-    H1	0.0000	-0.9718	0.9211
-    N2	0.0000	0.0648	0.5834
-    O3	0.0000	0.0648	-0.6256
-    """	
-]
-
-testing_ions = [
-    """
-    C1	0.0000	0.0000	0.0000
-    N2	0.0000	0.0000	1.1770
-    """,
-    """
-    O1	0.0000	0.0000	0.0684	
-    H2	0.0000	0.9581	-0.1825	 
-    H3	0.8298	-0.4791	-0.1825	
-    H4	-0.8298	-0.4791	-0.1825
-    """
-
-]
-
-# Example molecule (ethylene-like along z)
-mol = gto.Mole()
-mol.atom = """
-O1	0.0000	0.0000	0.1173
-H2	0.0000	0.7572	-0.4692
-H3	0.0000	-0.7572	-0.4692
+xyz = """4
+ammonia
+N	0.0000	0.0000	0.0000
+H	0.0000	-0.9377	-0.3816
+H	0.8121	0.4689	-0.3816
+H	-0.8121	0.4689	-0.3816
 """
 
+mol = Chem.MolFromXYZBlock(xyz)
+# 1) perceive bonds from distances
+rdDetermineBonds.DetermineConnectivity(mol)
+# 2) make sure caches and ring info are initialized
+mol.UpdatePropertyCache(strict=False)
+Chem.GetSymmSSSR(mol)   # initializes RingInfo; no-op if no rings
+
+conf = mol.GetConformer()
+
+# Now transforms work without errors:
 '''
-C 0.0000  0.0000  0.6695
-C 0.0000  0.0000 -0.6695
-H 0.0000  0.9289  1.2321
-H 0.0000 -0.9289  1.2321
-H 0.0000  0.9289 -1.2321
-H 0.0000 -0.9289 -1.2321
+i, j = 0, 1  
+d = T.GetBondLength(conf, i, j)
+T.SetBondLength(conf, i, j, d * 1.1)  # stretch +10%
 '''
-mol.unit = 'Angstrom'
-mol.basis = 'sto-3g'
-mol.charge = 0
-mol.spin = 0
-mol.build()
+i, j, k = 1, 0, 2      
+ang = T.GetAngleDeg(conf, i, j, k)
+T.SetAngleDeg(conf, i, j, k, ang * 0.9)
 
-
-df_pairs = build_t1_df(mol)
-print(df_pairs['t1'])
-print(f"\nRows: {len(df_pairs)}  |  Columns: {df_pairs.shape[1]}")
-
+# Extract coordinates back out
+pts = conf.GetPositions()
+geom = "\n".join(f"{a.GetSymbol()}\t{xyz[0]:.4f}\t{xyz[1]:.4f}\t{xyz[2]:.4f}"
+                 for a, xyz in zip(mol.GetAtoms(), pts))
+print(geom)
 
 
