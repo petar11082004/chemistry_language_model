@@ -23,6 +23,32 @@ class MoleculeFeatureExtractor:
         self.mol = mol
     
     @staticmethod
+    def positivify_coeffmats(coeffmats: list[np.ndarray], tolerance: float = 1e-6):
+
+        r"""For each MO coefficient matrix in coeffmatlist,
+                (which consists of a numpy 2D array with MOs as the columns)
+                modify the signs of the MOs so the greatest coeff is positive.
+                In order for this to be stable, given there are often equal magnitude coeffs,
+                any coeffs within `tolerance` of the largest magnitude coeff are treated as
+                equivalent and the one with the lowest AO index is chosen to be the positive one.
+            :param coeffmats: `list[np.ndarray]` of coefficient matrices
+            :param tolerance: `float` difference regarded as degenerate with the largest value.
+            Modifies coeffmats in-place.
+        """
+
+        for coeffmat in coeffmats:
+            for i,coeffvec in enumerate(coeffmat.T):
+                sortcoeffs = sorted([(abs(x),ind,x) for ind,x in enumerate(coeffvec)])
+                maxabs = sortcoeffs[-1][0]
+                #Filter all those within 1e-6 of max amplitude
+                filtcoeffs = [tup for tup in sortcoeffs if abs(tup[0]-maxabs)<1e-6]
+                #Now pick the one with the lowest index
+                sortfiltcoeffs = sorted(filtcoeffs,key= lambda tup: tup[1])
+                _,ind,coeff = sortfiltcoeffs[0]
+                if coeff<0:
+                    coeffmat[:,i]*=-1
+
+    @staticmethod
     def localize_orbitals_separately(mol, mo_coeff, mo_occ):
 
         """
@@ -79,6 +105,9 @@ class MoleculeFeatureExtractor:
 
         localized_occupied_orbitals_coeffs = localized_occupied_orbitals_method.kernel()
         localized_virtual_orbitals_coeffs = localized_virtual_orbitals_method.kernel()
+
+        MoleculeFeatureExtractor.positivify_coeffmats([localized_occupied_orbitals_coeffs])
+        MoleculeFeatureExtractor.positivify_coeffmats([localized_virtual_orbitals_coeffs])
 
         U_occ =  np.linalg.pinv(occupied_orbitals_coeffs_rotated) @ localized_occupied_orbitals_coeffs
         U_vir = np.linalg.pinv(virtual_orbitals_coeffs_rotated) @ localized_virtual_orbitals_coeffs
@@ -417,3 +446,4 @@ class MoleculeFeatureExtractor:
 
 
         return maglz_expect, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12, mo_energies
+    

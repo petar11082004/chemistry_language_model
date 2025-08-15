@@ -41,7 +41,7 @@ training_molecules = [
     O   0.0000  0.0000  0.1173
     H   0.0000  0.7572  -0.4692
     H   0.0000  -0.6383 -0.5968
-    """
+    """,
     """
     C	0.0000	0.0000	0.0000
     H	0.6276	0.6276	0.6276
@@ -231,7 +231,7 @@ training_molecules = [
     H   1.0192  0.0000  -1.1573
     H   -0.5096 -0.8826 -1.1573
     H   -0.5096 0.8826  -1.1573
-    """
+    """,
     """
     N	0.0000	0.0000	0.0000
     H	0.0000	-0.9377	-0.3816
@@ -414,7 +414,7 @@ training_molecules = [
     C  0.0000  0.0000  0.0000
     H  0.0000  0.0000  1.0640
     N  0.0000  0.0000  -1.2716
-    """
+    """,
     """
     C  0.0000  0.0000  0.0000
     H  0.3279  0.0000  1.0122
@@ -952,7 +952,7 @@ testing_ions = [
     H   0.0000  0.9581  -0.1825
     H   0.8298  -0.3833 -0.2076
     H   -0.8298 -0.3833 -0.2076
-    """
+    """,
     """
     O   0.0000  0.0000  0.0684
     H   -0.1790 0.9592  -0.1016
@@ -979,7 +979,7 @@ def build_mol(geom: str, *, charge: int = 0, spin: int | None = None, basis: str
     mol = gto.Mole()
     mol.atom = geom
     mol.unit = unit
-    mol.basiss = basis
+    mol.basis = basis
     mol.charge = charge
     if spin is not None:
         mol.spin = spin
@@ -1003,8 +1003,8 @@ def dfs_from_geoms(geoms: list[str], *,
     return pd.concat(dfs, ignore_index = True)
 
 
-training_ion_charges = [-1, +1]
-testing_ion_charges = [-1, +1]
+training_ion_charges =  [-1, -1, -1, +1, +1, +1, +1, +1]
+testing_ion_charges = [-1, -1, -1, +1, +1, +1, +1, +1, +1]
 
 train_neutral_df = dfs_from_geoms(training_molecules)
 train_ion_df = dfs_from_geoms(training_ions, charges = training_ion_charges)

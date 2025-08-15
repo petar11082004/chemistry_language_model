@@ -58,12 +58,17 @@ def generate_t1_df(mol: gto.Mole) -> pd.DataFrame:
     front = [c for c in ("occ_idx", "vir_idx") if c in pairs.columns]
     pairs = pairs[front + desired]
 
-    mo_occ = mf.mo_occ
-    C_loc, _ = MoleculeFeatureExtractor.localize_orbitals_separately(mol, mo_coeff, mo_occ)
-    mycc = cc.ccsd.CCSD(mf, mo_coeff=C_loc).run()
-    t1 = mycc.t1.flatten()
+    _, U = MoleculeFeatureExtractor.localize_orbitals_separately(mol, mo_coeff, mo_occ)
+    
+    U_occ = U[:n_occ, :n_occ].copy()
+    U_vir = U[n_occ:, n_occ:].copy()
+
+    mycc = cc.ccsd.CCSD(mf).run()
+    t1 = mycc.t1
+
+    t1 = U_occ.T @ t1 @ U_vir
+    
+    t1 = t1.flatten()
     pairs['t1'] = t1
-
-
-
+  
     return pairs

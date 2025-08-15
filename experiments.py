@@ -1,40 +1,44 @@
-from rdkit import Chem
-from rdkit.Chem import rdMolTransforms as T
-from rdkit.Chem import rdDetermineBonds
 import numpy as np
 
-xyz = """7
-methylamine
-C	0.0583	0.7129	0.0000	 	
-N	0.0583	-0.7726	0.0000	 	
-H	-0.9425	1.1529	0.0000	 	
-H	0.5877	1.0695	0.8821	 	
-H	0.5877	1.0695	-0.8821	 	
-H	-0.4953	-1.0804	-0.8165	 	
-H	-0.4953	-1.0804	0.8165
-"""
+def positivify_coeffmats(coeffmats: list[np.ndarray], tolerance: float = 1e-6):
 
-mol = Chem.MolFromXYZBlock(xyz)
-# 1) perceive bonds from distances
-rdDetermineBonds.DetermineConnectivity(mol)
-# 2) make sure caches and ring info are initialized
-mol.UpdatePropertyCache(strict=False)
-Chem.GetSymmSSSR(mol)   # initializes RingInfo; no-op if no rings
+    r"""For each MO coefficient matrix in coeffmatlist,
+            (which consists of a numpy 2D array with MOs as the columns)
+            modify the signs of the MOs so the greatest coeff is positive.
+            In order for this to be stable, given there are often equal magnitude coeffs,
+            any coeffs within `tolerance` of the largest magnitude coeff are treated as
+            equivalent and the one with the lowest AO index is chosen to be the positive one.
+        :param coeffmats: `list[np.ndarray]` of coefficient matrices
+        :param tolerance: `float` difference regarded as degenerate with the largest value.
+        Modifies coeffmats in-place.
+    """
 
-conf = mol.GetConformer()
+    for coeffmat in coeffmats:
+        for i,coeffvec in enumerate(coeffmat.T):
+            sortcoeffs = sorted([(abs(x),ind,x) for ind,x in enumerate(coeffvec)])
+            maxabs = sortcoeffs[-1][0]
+            #Filter all those within 1e-6 of max amplitude
+            filtcoeffs = [tup for tup in sortcoeffs if abs(tup[0]-maxabs)<1e-6]
+            #Now pick the one with the lowest index
+            sortfiltcoeffs = sorted(filtcoeffs,key= lambda tup: tup[1])
+            _,ind,coeff = sortfiltcoeffs[0]
+            if coeff<0:
+                coeffmat[:,ind]*=-1
 
-# Now transforms work without errors:
-"""
-i, j = 1,5 
-d = T.GetBondLength(conf, i, j)
-T.SetBondLength(conf, i, j, d * 0.9)  # stretch +10%
-"""
-i, j, k = 6, 1, 5     
-ang = T.GetAngleDeg(conf, i, j, k)
-T.SetAngleDeg(conf, i, j, k, ang * 1.1)
 
-# Extract coordinates back out
-pts = conf.GetPositions()
-geom = "\n".join(f"{a.GetSymbol()}\t{xyz[0]:.4f}\t{xyz[1]:.4f}\t{xyz[2]:.4f}"
-                 for a, xyz in zip(mol.GetAtoms(), pts))
-print(geom)
+A = np.array([
+    [-0.20,  0.10, -0.50],
+    [ 0.90, -0.70,  0.50],
+    [-0.10,  0.60, -0.10],
+], dtype=float)  # rows = AOs, cols = MOs
+
+B = np.array([
+    [ 0.30,  0.40],
+    [-0.60,  0.10],
+], dtype=float)
+
+mats = [A, B]
+
+print("Before:\nA=\n", A, "\nB=\n", B)
+positivify_coeffmats(mats, tolerance=1e-6)  # modifies A and B in place
+print("\nAfter:\nA=\n", A, "\nB=\n", B)
