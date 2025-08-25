@@ -14,6 +14,7 @@ class T1DataProcessor:
     - charges_*: kept raw (categorical integers with PAD=0).
     - Δε block: adds inverse gap (1/Δε) and log gap (log Δε),
                 then standardizes both.
+    - t1: standardised
 
     Follows a fit/transform API (like sklearn):
     - fit(df): compute means/stds on training data (store internally).
@@ -35,8 +36,8 @@ class T1DataProcessor:
         These statistics will be reused for all future transformations.
         """
 
-        # === Energies: always standardized ===
-        for col in ["occ_mo_energies", "vir_mo_energies"]:
+        # === Energies and t1: always standardized ===
+        for col in ["occ_mo_energies", "vir_mo_energies", "t1"]:
             self.means[col] = df[col].mean()
             self.stds[col] = df[col].std() + self.eps
 
@@ -65,7 +66,7 @@ class T1DataProcessor:
         out = df.copy()
 
         # === Standardize energies ===
-        for col in ["occ_mo_energies", "vir_mo_energies"]:
+        for col in ["occ_mo_energies", "vir_mo_energies", "t1"]:
             out[col] = (df[col] - self.means[col]) / self.stds[col]
 
         # === Masked standardization for inverse distances ===
