@@ -273,10 +273,10 @@ class T1Model(nn.Module):
     """
 
     def __init__(self, cfg: T1Config):
-        super().init()
+        super().__init__()
         self.cfg = cfg
 
-        act = ShiftedSoftplus
+        act = ShiftedSoftplus()
         self.occ_net = nn.Sequential(
             nn.Linear(cfg.d_occ, cfg.hidden_dim),
             act,
@@ -305,7 +305,7 @@ class T1Model(nn.Module):
         self.alpha_s = nn.Parameter(torch.zeros(1))
         self.bs = nn.Parameter(torch.zeros(1))
 
-        self.vm = nn.Parameter(torch.randn(cfg.d_gap_phi + cfg.d_occ + cfg.d_vir*0.01)) #(19,)
+        self.vm = nn.Parameter(torch.randn(cfg.d_gap_phi + cfg.d_occ + cfg.d_vir) * 0.01) #(19,)
         self.alpha_m = nn.Parameter(torch.zeros(1))
         self.bm = nn.Parameter(torch.zeros(1))
 
@@ -329,7 +329,7 @@ class T1Model(nn.Module):
         g = g_bilinear + g_hadamard + g_linear
 
         # ŝ and log|t|
-        s_hat = torch.tanh(self.alpha_s * g + torch.einsum('j,bj', self.vs, xi) + self.bs) #(B,)
+        s_hat = torch.tanh(self.alpha_s * g + torch.einsum('j,bj -> b', self.vs, xi) + self.bs) #(B,)
         log_amp = self.alpha_m*g + torch.einsum('j, bj-> b', self.vm, xi) + self.bm        #(B,)
 
         inv_delta_e = gap_phi[:, 2] # (B,)
@@ -353,7 +353,7 @@ class T1Loss(nn.Module):
     
     def forward(
         self, 
-        outputs: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.tensor],
+        outputs: Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor],
         targets: torch.Tensor,
         X_occ: torch.Tensor,
         X_vir: torch.Tensor,
