@@ -333,7 +333,7 @@ class T1Model(nn.Module):
         log_amp = self.alpha_m*g + torch.einsum('j, bj-> b', self.vm, xi) + self.bm        #(B,)
 
         inv_delta_e = gap_phi[:, 2] # (B,)
-        t_hat = s_hat *torch.exp(log_amp) * inv_delta_e
+        t_hat = s_hat * torch.exp(torch.clamp(log_amp, -20, 20)) * inv_delta_e
 
         return t_hat, s_hat, log_amp, g
     
@@ -370,6 +370,10 @@ class T1Loss(nn.Module):
         p = torch.clamp(p, 1e-6, 1.0 - 1e-6)
         y_sign = (t_true >= 0).float()
         loss_sign = F.binary_cross_entropy(p, y_sign)*self.cfg.lambda_sign
+
+        # --- Debugging prints ---
+        print("p shape:", p.shape, "y_sign shape:", y_sign.shape)
+        print("p min/max:", p.min().item(), p.max().item())
 
         #3) Auxilary stabiliser: g ≈ Δε * t_true
         inv_delta_e = gap_phi[:, 2]
