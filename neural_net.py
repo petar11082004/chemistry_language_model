@@ -316,6 +316,14 @@ class T1Model(nn.Module):
         gap_phi[:, 2] = (Δε)^-1
         """
 
+        if torch.isnan(X_occ).any() or torch.isinf(X_occ).any():
+            print("⚠️ NaN/Inf in X_occ")
+        if torch.isnan(X_vir).any() or torch.isinf(X_vir).any():
+            print("⚠️ NaN/Inf in X_vir")
+        if torch.isnan(gap_phi).any() or torch.isinf(gap_phi).any():
+            print("⚠️ NaN/Inf in gap_phi")
+
+
         hi = self.occ_net(X_occ) #(B, 8)
         ha = self.vir_net(X_vir) #(B, 8)
 
@@ -327,13 +335,15 @@ class T1Model(nn.Module):
         g_hadamard = torch.einsum('i,bi->b', self.u, hi * ha)
         g_linear = torch.einsum('j,bj->b', self.wg, xi) + self.cg
         g = g_bilinear + g_hadamard + g_linear
+        g = torch.clamp(g, -1e6, 1e6)
 
         # ŝ and log|t|
         s_hat = torch.tanh(self.alpha_s * g + torch.einsum('j,bj -> b', self.vs, xi) + self.bs) #(B,)
         log_amp = self.alpha_m*g + torch.einsum('j, bj-> b', self.vm, xi) + self.bm        #(B,)
+        log_amp = torch.clamp(log_amp, -20, 20)
 
-        inv_delta_e = gap_phi[:, 2] # (B,)
-        t_hat = s_hat * torch.exp(torch.clamp(log_amp, -20, 20)) * inv_delta_e
+        inv_delta_e = torch.clamp(gap_phi[:, 2], min=1e-6, max=1e6) # (B,)
+        t_hat = s_hat * torch.exp(log_amp) * inv_delta_e
 
         return t_hat, s_hat, log_amp, g
     
@@ -385,7 +395,7 @@ class T1Loss(nn.Module):
 
         #3) Auxilary stabiliser: g ≈ Δε * t_true
         inv_delta_e = gap_phi[:, 2]
-        delta_e = 1.0/torch.clamp(inv_delta_e, min = 1e-6)
+        delta_e = 1.0/torch.clamp(inv_delta_e, min = 1e-6, max = 1e-6)
         y_aux = delta_e * t_true
         loss_aux = F.huber_loss(g, y_aux, delta = self.cfg.huber_delta)*self.cfg.lambda_aux
 
