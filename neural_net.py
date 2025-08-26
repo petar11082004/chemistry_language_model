@@ -282,7 +282,7 @@ class T1Model(nn.Module):
             act,
             nn.Linear(cfg.hidden_dim, cfg.hidden_dim),
             act,
-            nn.Linear(cfg.hidden_dim, cfg.d_occ)
+            nn.Linear(cfg.hidden_dim, cfg.d_occ),
             act,
         )
 
@@ -453,7 +453,7 @@ class T1Regressor:
         self.model.train()
         for epoch in range(1, epochs + 1):
             running = 0.0
-            for X_occ, X_vir, gap_phi, y in loader:
+            for X_occ, X_vir, gap_phi, y in train_loader:
                 X_occ = _to_tensor(X_occ, self.device)
                 X_vir = _to_tensor(X_vir, self.device)
                 gap_phi = _to_tensor(gap_phi, self.device)
