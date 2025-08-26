@@ -342,8 +342,10 @@ class T1Model(nn.Module):
         log_amp = self.alpha_m*g + torch.einsum('j, bj-> b', self.vm, xi) + self.bm        #(B,)
         log_amp = torch.clamp(log_amp, -20, 20)
 
-        inv_delta_e = torch.clamp(gap_phi[:, 2], min=1e-6, max=1e6) # (B,)
+        inv_delta_e = torch.clamp(gap_phi[:, 2], min=1e-3, max=1e3) # (B,)
         t_hat = s_hat * torch.exp(log_amp) * inv_delta_e
+        t_hat = torch.clamp(t_hat, -1e6, 1e6)
+
 
         return t_hat, s_hat, log_amp, g
     
@@ -382,8 +384,20 @@ class T1Loss(nn.Module):
         #2) Sign fit (BCE) with p = (1 + ŝ)/2 and label y_sign = 1[t_true >= 0]
         p = (1.0 + s_hat)*0.5
         p = torch.clamp(p, 1e-6, 1.0 - 1e-6)
+
+        # --- Debug ---
+        if torch.isnan(t_true).any() or torch.isinf(t_true).any():
+            print("⚠️ NaN/Inf in t_true, replacing")
+        t_true = torch.nan_to_num(t_true, nan=0.0, posinf=1e6, neginf=-1e6)
+
         y_sign = (t_true >= 0).float()
+        y_sign = torch.clamp(y_sign, 0.0, 1.0)
         y_sign = y_sign.view_as(p)
+
+        # --- Debug ---
+        if not torch.all((y_sign == 0) | (y_sign == 1)):
+            print("⚠️ y_sign contains invalid values:", y_sign.unique())
+
         loss_sign = F.binary_cross_entropy(p, y_sign)*self.cfg.lambda_sign
 
         # --- Debugging checks ---
@@ -395,7 +409,7 @@ class T1Loss(nn.Module):
 
         #3) Auxilary stabiliser: g ≈ Δε * t_true
         inv_delta_e = gap_phi[:, 2]
-        delta_e = 1.0/torch.clamp(inv_delta_e, min = 1e-6, max = 1e-6)
+        delta_e = 1.0/torch.clamp(inv_delta_e, min = 1e-6, max = 1e6)
         y_aux = delta_e * t_true
         loss_aux = F.huber_loss(g, y_aux, delta = self.cfg.huber_delta)*self.cfg.lambda_aux
 
