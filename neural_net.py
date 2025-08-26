@@ -418,6 +418,7 @@ class T1Regressor:
     def fit(
         self,
         train_df: pd.DataFrame,
+        val_df: pd.DataFrame = None,
         epochs: int = 200,
         batch_size: int = 64,
         processor = None, # optionally pass a pre-fitted processor
@@ -429,20 +430,26 @@ class T1Regressor:
             processor = T1DataProcessor()
             processor.fit(train_df)
         self.processor = processor
+
         df_proc = self.processor.transform(train_df)
-
-        # 2) dataset / loader
         ds = T1Dataset(df_proc)
-        loader = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last = False)
+        train_loader = DataLoader(ds, batch_size=batch_size, shuffle=True, drop_last = False)
 
-        # 3) optimizer & loss
+        # Validation loader if provided
+        val_loader = None
+        if val_df is not None:
+            df_val = self.processor.transform(val_df)
+            ds_val = T1Dataset(df_val)
+            val_loader = DataLoader(ds_val, batch_size= batch_size, shuffle=False)
+
+        # 2) optimizer & loss
         opt = torch.optim.Adam(
             self.model.parameters(),
             lr = self.cfg.lr,
             weight_decay = self.cfg.weight_decay,
         )
         criterion = T1Loss(self.cfg, self.model)
-        # 4) training loop
+        # 3) training loop
         self.model.train()
         for epoch in range(1, epochs + 1):
             running = 0.0
@@ -460,8 +467,31 @@ class T1Regressor:
                 opt.step()
                 running += loss.item()
 
-            avg = running/max(1, len(loader))
-            print(f"[Epoch {epoch}] loss = {avg:.6f}")
+            avg_train = running/max(1, len(train_loader))
+
+            # --- Validation ---
+            avg_val = None
+            if val_loader is not None:
+                self.model.eval()
+                val_loss = 0.0
+                with torch.no_grad():
+                    for X_occ, X_vir, gap_phi, y in val_loader:
+                        X_occ = _to_tensor(X_occ, self.device)
+                        X_vir = _to_tensor(X_vir, self.device)
+                        gap_phi = _to_tensor(gap_phi, self.device)
+                        y = _to_tensor(y, self.device)
+
+                        outputs = self.model(X_occ, X_vir, gap_phi)
+                        loss = criterion(outputs, y, X_occ, X_vir, gap_phi)
+                        val_loss += loss.item()
+                avg_val = val_loss/max(1, len(val_loader))
+
+            # --- Logging ---
+            if epoch %10 == 0 or epoch == 1:
+                if avg_val is not None:
+                    print(f"[Epoch {epoch}] train_loss = {avg_train:.6f}, val_loss = {avg_val:.6f}")
+                else:
+                    print(f"[Epoch {epoch}] train_loss = {avg_train:.6f}")
 
     # ---------- Predict ----------
     @torch.no_grad()
