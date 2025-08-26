@@ -257,8 +257,8 @@ class T1Config:
     lambda_aux: float = 1.0
     lambda_mono: float = 1.0
     weight_decay: float = 1e-4
-    lr: float = 1e-3
-    monotonic_eps: float = 1e-3 # finite-difference ε for Δε
+    lr: float = 1e-4
+    monotonic_eps: float = 1e-2 # finite-difference ε for Δε
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
 class T1Model(nn.Module):
@@ -365,19 +365,27 @@ class T1Loss(nn.Module):
         #1) Amplitude fit (Huber)
         loss_amp = F.huber_loss(t_hat, t_true, delta =self.cfg.huber_delta)
 
+        # --- Debugging checks ---
+        if torch.isnan(t_hat).any() or torch.isinf(t_hat).any():
+            print("⚠️ NaN/Inf detected in t_hat")
+
         #2) Sign fit (BCE) with p = (1 + ŝ)/2 and label y_sign = 1[t_true >= 0]
         p = (1.0 + s_hat)*0.5
         p = torch.clamp(p, 1e-6, 1.0 - 1e-6)
         y_sign = (t_true >= 0).float()
+        y_sign = y_sign.view_as(p)
         loss_sign = F.binary_cross_entropy(p, y_sign)*self.cfg.lambda_sign
 
-        # --- Debugging prints ---
-        print("p shape:", p.shape, "y_sign shape:", y_sign.shape)
-        print("p min/max:", p.min().item(), p.max().item())
+        # --- Debugging checks ---
+        if torch.isnan(p).any() or torch.isinf(p).any():
+            print("⚠️ NaN/Inf detected in p")
+            print("p sample:", p[:5].detach().cpu().numpy())
+            print("y_sign sample:", y_sign[:5].detach().cpu().numpy())
+            print("p shape:", p.shape, "y_sign shape:", y_sign.shape)
 
         #3) Auxilary stabiliser: g ≈ Δε * t_true
         inv_delta_e = gap_phi[:, 2]
-        delta_e = 1.0/torch.clamp(inv_delta_e, min = 1e-12)
+        delta_e = 1.0/torch.clamp(inv_delta_e, min = 1e-6)
         y_aux = delta_e * t_true
         loss_aux = F.huber_loss(g, y_aux, delta = self.cfg.huber_delta)*self.cfg.lambda_aux
 
@@ -489,6 +497,7 @@ class T1Regressor:
                         loss = criterion(outputs, y, X_occ, X_vir, gap_phi)
                         val_loss += loss.item()
                 avg_val = val_loss/max(1, len(val_loader))
+                self.model.train()
 
             # --- Logging ---
             if epoch %10 == 0 or epoch == 1:
