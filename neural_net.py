@@ -199,7 +199,9 @@ class T1Loss(nn.Module):
         gap_phi: torch.Tensor,
     ) -> torch.Tensor:
         t_hat, s_hat, _, g = outputs
+        print("shape of g:{g.shape}")
         t_true = targets.squeeze(-1) # (B,)
+        print("shape of t_true:{t_true.shape}")
 
         #1) Amplitude fit (Huber)
         loss_amp = F.huber_loss(t_hat, t_true, delta =self.cfg.huber_delta)
@@ -251,7 +253,7 @@ class T1Loss(nn.Module):
         d_abs = (torch.abs(t_hat_plus) - torch.abs(t_hat))/d_eps
         r_gap = torch.relu(d_abs).mean()*self.cfg.lambda_mono
 
-        total = loss_amp + loss_sign + loss_aux+r_gap
+        total = loss_amp + loss_sign + loss_aux + r_gap
 
         '''
         # ---- Debug print ----
@@ -262,6 +264,7 @@ class T1Loss(nn.Module):
                   f"mono={r_gap.item():.3e}, "
                   f"total={total.item():.3e}")
         '''
+
         return total
 
 
