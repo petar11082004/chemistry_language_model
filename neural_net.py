@@ -199,9 +199,9 @@ class T1Loss(nn.Module):
         gap_phi: torch.Tensor,
     ) -> torch.Tensor:
         t_hat, s_hat, _, g = outputs
-        print("shape of g:{g.shape}")
+        print(f"shape of g:{g.shape}")
         t_true = targets.squeeze(-1) # (B,)
-        print("shape of t_true:{t_true.shape}")
+        print(f"shape of t_true:{t_true.shape}")
 
         #1) Amplitude fit (Huber)
         loss_amp = F.huber_loss(t_hat, t_true, delta =self.cfg.huber_delta)
