@@ -40,7 +40,7 @@ class ShiftedSoftplus(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         
         #z = torch.clamp(self.beta * x, -50, 50)
-        return (1.0/ self.beta)* torch.log(0.5 + 0.5*torch.expselfbeta*x)
+        return (1.0/ self.beta)* torch.log(0.5 + 0.5*torch.exp(self.beta*x))
     
 def _to_tensor(x:np.ndarray, device: torch.device) -> torch.Tensor:
     return torch.as_tensor(x, dtype = torch.float32, device = device)
