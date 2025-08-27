@@ -39,8 +39,8 @@ class ShiftedSoftplus(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         
-        z = torch.clamp(self.beta * x, -50, 50)
-        return (1.0/ self.beta)* torch.log(0.5 + 0.5*torch.exp(z))
+        #z = torch.clamp(self.beta * x, -50, 50)
+        return (1.0/ self.beta)* torch.log(0.5 + 0.5*torch.expselfbeta*x)
     
 def _to_tensor(x:np.ndarray, device: torch.device) -> torch.Tensor:
     return torch.as_tensor(x, dtype = torch.float32, device = device)
@@ -248,12 +248,15 @@ class T1Loss(nn.Module):
             print("y_sign sample:", y_sign[:5].detach().cpu().numpy())
             print("p shape:", p.shape, "y_sign shape:", y_sign.shape)
 
+        
         #3) Auxilary stabiliser: g ≈ Δε * t_true
         inv_delta_e = gap_phi[:, 2]
         delta_e = 1.0/torch.clamp(inv_delta_e, min = 1e-6, max = 1e6)
+        '''
         y_aux = delta_e * t_true
         corr = torch.corrcoef(torch.stack([g.flatten(), y_aux.flatten()]))[0,1] 
         loss_aux = (1 - corr) * self.cfg.lambda_aux
+        '''
 
         # 4) Monotonicity prior: encourage |t| to decrease with Δε
         #    R_gap = mean( relu( (|t(Δε+dε)| - |t(Δε)|) / dε ) )
@@ -270,7 +273,7 @@ class T1Loss(nn.Module):
         d_abs = (torch.abs(t_hat_plus) - torch.abs(t_hat))/d_eps
         r_gap = torch.relu(d_abs).mean()*self.cfg.lambda_mono
 
-        total = loss_amp + loss_sign + loss_aux + r_gap
+        total = loss_amp + loss_sign + r_gap
 
         '''
         # ---- Debug print ----
