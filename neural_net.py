@@ -253,6 +253,7 @@ class T1Loss(nn.Module):
 
         total = loss_amp + loss_sign + loss_aux+r_gap
 
+        '''
         # ---- Debug print ----
         if torch.isnan(total).any() == False:
             print(f"amp={loss_amp.item():.3e}, "
@@ -262,6 +263,7 @@ class T1Loss(nn.Module):
                   f"total={total.item():.3e}")
 
         return total
+        '''
 
 
 # -------------------------
