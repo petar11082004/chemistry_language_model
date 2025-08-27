@@ -151,14 +151,6 @@ class T1Model(nn.Module):
         gap_phi[:, 2] = (Δε)^-1
         """
 
-        if torch.isnan(X_occ).any() or torch.isinf(X_occ).any():
-            print("⚠️ NaN/Inf in X_occ")
-        if torch.isnan(X_vir).any() or torch.isinf(X_vir).any():
-            print("⚠️ NaN/Inf in X_vir")
-        if torch.isnan(gap_phi).any() or torch.isinf(gap_phi).any():
-            print("⚠️ NaN/Inf in gap_phi")
-
-
         hi = self.occ_net(X_occ) #(B, 8)
         ha = self.vir_net(X_vir) #(B, 8)
 
@@ -219,11 +211,6 @@ class T1Loss(nn.Module):
         #2) Sign fit (BCE) with p = (1 + ŝ)/2 and label y_sign = 1[t_true >= 0]
         p = (1.0 + s_hat)*0.5
         p = torch.clamp(p, 1e-6, 1.0 - 1e-6)
-
-        # --- Debug ---
-        if torch.isnan(t_true).any() or torch.isinf(t_true).any():
-            print("⚠️ NaN/Inf in t_true, replacing")
-        t_true = torch.nan_to_num(t_true, nan=0.0, posinf=1e6, neginf=-1e6)
 
         y_sign = (t_true >= 0).float()
         y_sign = torch.clamp(y_sign, 0.0, 1.0)
