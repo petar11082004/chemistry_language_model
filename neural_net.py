@@ -161,6 +161,20 @@ class T1Model(nn.Module):
         g_bilinear = torch.einsum('bi,ij,bj->b', hi, self.M, ha)
         g_hadamard = torch.einsum('i,bi->b', self.u, hi * ha)
         g_linear = torch.einsum('j,bj->b', self.wg, xi) + self.cg
+
+        if torch.isnan(hi).any() or torch.isinf(hi).any():
+            print("⚠️ NaN/Inf in hi (occ_net output)")
+        if torch.isnan(ha).any() or torch.isinf(ha).any():
+            print("⚠️ NaN/Inf in ha (vir_net output)")
+
+        if torch.isnan(g_bilinear).any() or torch.isinf(g_bilinear).any():
+            print("⚠️ NaN/Inf in g_bilinear")
+        if torch.isnan(g_hadamard).any() or torch.isinf(g_hadamard).any():
+            print("⚠️ NaN/Inf in g_hadamard")
+        if torch.isnan(g_linear).any() or torch.isinf(g_linear).any():
+            print("⚠️ NaN/Inf in g_linear")
+
+
         g = g_bilinear + g_hadamard + g_linear
         g = torch.clamp(g, -1e6, 1e6)
 
@@ -172,19 +186,6 @@ class T1Model(nn.Module):
         inv_delta_e = torch.clamp(gap_phi[:, 2], min=1e-3, max=1e3) # (B,)
         t_hat = s_hat * torch.exp(log_amp) * inv_delta_e
         t_hat = torch.clamp(t_hat, -1e6, 1e6)
-
-        # --- Debug ---
-
-        if torch.isnan(log_amp).any() or torch.isinf(log_amp).any():
-            print("⚠️ NaN/Inf detected in log_amp")
-
-        if torch.isnan(inv_delta_e).any() or torch.isinf(inv_delta_e).any():
-            print("⚠️ NaN/Inf detected in inv_delta_e")
-            print("inv_delta_e sample:", inv_delta_e[:5].detach().cpu().numpy())
-            print("gap_phi sample:", gap_phi[:5].detach().cpu().numpy())
-
-        if torch.isnan(g).any() or torch.isinf(g).any():
-            print("⚠️ NaN/Inf detected in g")
 
         return t_hat, s_hat, log_amp, g
     
