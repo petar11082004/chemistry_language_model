@@ -233,7 +233,8 @@ class T1Loss(nn.Module):
         inv_delta_e = gap_phi[:, 2]
         delta_e = 1.0/torch.clamp(inv_delta_e, min = 1e-6, max = 1e6)
         y_aux = delta_e * t_true
-        loss_aux = F.huber_loss(g, y_aux, delta = self.cfg.huber_delta)*self.cfg.lambda_aux
+        corr = torch.corrcoef(torch.stack([g.flatten(), y_aux.flatten()]))[0,1] 
+        loss_aux = (1 - corr) * self.cfg.lambda_aux
 
         # 4) Monotonicity prior: encourage |t| to decrease with Δε
         #    R_gap = mean( relu( (|t(Δε+dε)| - |t(Δε)|) / dε ) )
