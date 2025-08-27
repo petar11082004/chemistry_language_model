@@ -173,6 +173,18 @@ class T1Model(nn.Module):
         t_hat = s_hat * torch.exp(log_amp) * inv_delta_e
         t_hat = torch.clamp(t_hat, -1e6, 1e6)
 
+        # --- Debug ---
+
+        if torch.isnan(log_amp).any() or torch.isinf(log_amp).any():
+            print("⚠️ NaN/Inf detected in log_amp")
+
+        if torch.isnan(inv_delta_e).any() or torch.isinf(inv_delta_e).any():
+            print("⚠️ NaN/Inf detected in inv_delta_e")
+            print("inv_delta_e sample:", inv_delta_e[:5].detach().cpu().numpy())
+            print("gap_phi sample:", gap_phi[:5].detach().cpu().numpy())
+
+        if torch.isnan(g).any() or torch.isinf(g).any():
+            print("⚠️ NaN/Inf detected in g")
 
         return t_hat, s_hat, log_amp, g
     

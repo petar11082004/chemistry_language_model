@@ -6,11 +6,15 @@ from t1_data_processor import T1DataProcessor
 train_df = pd.read_parquet("t1_pairs_training_20250815_170401.parquet")
 val_df = pd.read_parquet("t1_pairs_testing_20250815_170401.parquet")
 
+assert np.all(np.isfinite(train_df.values)), "Dataset contains NaN or Inf!"
+assert np.all(np.isfinite(val_df.values)), "Dataset contains NaN or Inf!"
+print("No such values")
+""""
 # train
 cfg = T1Config()
 reg = T1Regressor(cfg)
 reg.fit(train_df = train_df, val_df = val_df, epochs=200, batch_size=64)
-
+"""
 # save
 #reg.save("t1_model.pt", "t1_processor.pkl")
 
