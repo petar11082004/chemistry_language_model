@@ -207,8 +207,11 @@ class T1Loss(nn.Module):
         loss_amp = F.huber_loss(t_hat, t_true, delta =self.cfg.huber_delta)
 
         # --- Debugging checks ---
-        if torch.isnan(t_hat).any() or torch.isinf(t_hat).any():
-            print("⚠️ NaN/Inf detected in t_hat")
+        if torch.isnan(t_hat).any():
+            print("⚠️ NaN detected in t_hat")
+        
+        if torch.isinf(t_hat).any():
+            print("⚠️ Inf detected in t_hat")
 
         #2) Sign fit (BCE) with p = (1 + ŝ)/2 and label y_sign = 1[t_true >= 0]
         p = (1.0 + s_hat)*0.5
