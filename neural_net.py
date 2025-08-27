@@ -261,9 +261,8 @@ class T1Loss(nn.Module):
                   f"aux={loss_aux.item():.3e}, "
                   f"mono={r_gap.item():.3e}, "
                   f"total={total.item():.3e}")
-
-        return total
         '''
+        return total
 
 
 # -------------------------
