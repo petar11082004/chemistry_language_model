@@ -251,6 +251,15 @@ class T1Loss(nn.Module):
         r_gap = torch.relu(d_abs).mean()*self.cfg.lambda_mono
 
         total = loss_amp + loss_sign + loss_aux+r_gap
+
+        # ---- Debug print ----
+        if torch.isnan(total).any() == False:
+            print(f"amp={loss_amp.item():.3e}, "
+                  f"sign={loss_sign.item():.3e}, "
+                  f"aux={loss_aux.item():.3e}, "
+                  f"mono={r_gap.item():.3e}, "
+                  f"total={total.item():.3e}")
+
         return total
 
 
