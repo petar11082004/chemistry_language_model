@@ -2,8 +2,8 @@ import pandas as pd
 import torch, numpy as np
 from neural_net import T1Config, T1Regressor, T1Dataset
 
-train_df = pd.read_parquet("t1_pairs_training_20250815_170401.parquet")
-val_df = pd.read_parquet("t1_pairs_testing_20250815_170401.parquet")
+train_df = pd.read_parquet("t1_pairs_training_20250812_140206.parquet")
+val_df = pd.read_parquet("t1_pairs_testing_20250812_140206.parquet")
 
 # train
 cfg = T1Config()
