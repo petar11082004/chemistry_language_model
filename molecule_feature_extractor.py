@@ -17,11 +17,21 @@ from qcmagic.core.sspace.statespace import positivify_coeffmats
 from scipy.linalg import expm
 import math
 import pandas as pd
+from scipy.optimize import linear_sum_assignment
     
 class MoleculeFeatureExtractor:
 
     def __init__(self, mol):
         self.mol = mol
+
+    @ staticmethod
+    def permute_orbitals(C ,S, L):
+        O = C.T @ S @ L
+        r,c = linear_sum_assignment(-np.abs(O))
+        perm = np.empty_like(c)
+        perm[r] = c
+        L_aln = L[:, perm].copy()
+        return L_aln
 
     @staticmethod
     def localize_orbitals_separately(mol, mo_coeff, mo_occ):
@@ -41,17 +51,16 @@ class MoleculeFeatureExtractor:
             numpy.ndarray:
                 stacked localized occupied and virtual orbitals.
         """
-
         #Create boolean masks
         occ_idx = mo_occ > 0
         vir_idx = mo_occ == 0
 
         # Use masks to select occupied and virtual orbitals
-        occupied_orbitals_coeffs = mo_coeff[:, occ_idx]
-        virtual_orbitals_coeffs = mo_coeff[:, vir_idx]
+        C_occ = mo_coeff[:, occ_idx]
+        C_vir = mo_coeff[:, vir_idx]
 
-        n_occ = occupied_orbitals_coeffs.shape[1]
-        n_vir = virtual_orbitals_coeffs.shape[1]
+        n_occ = C_occ.shape[1]
+        n_vir = C_vir.shape[1]
 
         # Create small real antisymmetric matrices A_occ, A_vir
         np.random.seed(42)
@@ -67,30 +76,34 @@ class MoleculeFeatureExtractor:
         Q_vir = expm(A_vir) #real orthogonal
 
         # Apply rotation: C' = C @ Q
-        occupied_orbitals_coeffs_rotated = occupied_orbitals_coeffs @ Q_occ
-        virtual_orbitals_coeffs_rotated = virtual_orbitals_coeffs @ Q_vir
+        C_occ_rot = C_occ @ Q_occ
+        C_vir_rot = C_vir @ Q_vir
 
         #.pipek.PipekMezey, .edmiston.EdmistonRuedenberg
 
-        localized_occupied_orbitals_method = lo.pipek.PipekMezey(mol, occupied_orbitals_coeffs_rotated)
-        localized_virtual_orbitals_method = lo.pipek.PipekMezey(mol, virtual_orbitals_coeffs_rotated)
+        L_occ_method = lo.EdmistonRuedenberg(mol, C_occ_rot)
+        L_vir_method = lo.EdmistonRuedenberg(mol, C_vir_rot)
 
-        localized_occupied_orbitals_method.init_guess = None
-        localized_virtual_orbitals_method.init_guess = None        
+        L_occ_method.init_guess = None
+        L_vir_method.init_guess = None        
 
-        localized_occupied_orbitals_coeffs = localized_occupied_orbitals_method.kernel()
-        localized_virtual_orbitals_coeffs = localized_virtual_orbitals_method.kernel()
+        L_occ = L_occ_method.kernel()
+        L_vir = L_vir_method.kernel()
 
-        positivify_coeffmats([localized_occupied_orbitals_coeffs])
-        positivify_coeffmats([localized_virtual_orbitals_coeffs])
+        S = mol.intor("int1e_ovlp")        
+        L_occ = MoleculeFeatureExtractor.permute_orbitals(C_occ, S ,L_occ)
+        L_vir = MoleculeFeatureExtractor.permute_orbitals(C_vir, S, L_vir)
 
-        U_occ =  np.linalg.pinv(occupied_orbitals_coeffs_rotated) @ localized_occupied_orbitals_coeffs
-        U_vir = np.linalg.pinv(virtual_orbitals_coeffs_rotated) @ localized_virtual_orbitals_coeffs
+        positivify_coeffmats([L_occ])
+        positivify_coeffmats([L_vir])
+
+        U_occ =  np.linalg.pinv(C_occ_rot) @ L_occ
+        U_vir = np.linalg.pinv(C_vir_rot) @ L_vir
         U = sp.linalg.block_diag(U_occ, U_vir)
 
-        loc_mo_coeffs = np.hstack([localized_occupied_orbitals_coeffs, localized_virtual_orbitals_coeffs])
+        L = np.hstack([L_occ, L_vir])
 
-        return loc_mo_coeffs, U
+        return L, U
     
     @staticmethod
     def population_analysis(mol, C_loc, mf):
@@ -411,7 +424,7 @@ class MoleculeFeatureExtractor:
 
         C_loc, U = MoleculeFeatureExtractor.localize_orbitals_separately(self.mol, mo_coeff, mo_occ)
 
-        MoleculeFeatureExtractor.generate_cube_files(C_loc, self.mol)
+        #MoleculeFeatureExtractor.generate_cube_files(C_loc, self.mol)
 
         indices_list = MoleculeFeatureExtractor.population_analysis(self.mol, C_loc, mf)
         charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12 = MoleculeFeatureExtractor.find_inverse_distances_and_atoms_on_which_MOs_are_centered(self.mol, indices_list)
@@ -422,3 +435,4 @@ class MoleculeFeatureExtractor:
 
         return maglz_expect, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12, mo_energies
     
+
