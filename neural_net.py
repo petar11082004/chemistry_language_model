@@ -317,7 +317,7 @@ class T1Regressor:
 
         # Validation loader if provided
         val_loader = None
-        if val_df is not None:
+        if val_df is not None: 
             df_val = self.processor.transform(val_df)
             ds_val = T1Dataset(df_val)
             val_loader = DataLoader(ds_val, batch_size= batch_size, shuffle=False)

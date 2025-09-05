@@ -24,7 +24,7 @@ class MoleculeFeatureExtractor:
     def __init__(self, mol):
         self.mol = mol
 
-    @ staticmethod
+    @staticmethod
     def permute_orbitals(C ,S, L):
         O = C.T @ S @ L
         r,c = linear_sum_assignment(-np.abs(O))
@@ -34,7 +34,7 @@ class MoleculeFeatureExtractor:
         return L_aln
 
     @staticmethod
-    def localize_orbitals_separately(mol, mo_coeff, mo_occ):
+    def localize_orbitals_separately(mol, mo_coeff, mo_occ, L_prev =None):
 
         """
         Localize occupied and virtual molecular orbitals separately using PipekMezey method.
@@ -81,8 +81,8 @@ class MoleculeFeatureExtractor:
 
         #.pipek.PipekMezey, .edmiston.EdmistonRuedenberg
 
-        L_occ_method = lo.EdmistonRuedenberg(mol, C_occ_rot)
-        L_vir_method = lo.EdmistonRuedenberg(mol, C_vir_rot)
+        L_occ_method = lo.pipek.PipekMezey(mol, C_occ_rot)
+        L_vir_method = lo.pipek.PipekMezey(mol, C_vir_rot)
 
         L_occ_method.init_guess = None
         L_vir_method.init_guess = None        
@@ -97,11 +97,12 @@ class MoleculeFeatureExtractor:
         positivify_coeffmats([L_occ])
         positivify_coeffmats([L_vir])
 
-        U_occ =  np.linalg.pinv(C_occ_rot) @ L_occ
-        U_vir = np.linalg.pinv(C_vir_rot) @ L_vir
-        U = sp.linalg.block_diag(U_occ, U_vir)
-
         L = np.hstack([L_occ, L_vir])
+
+        if L_prev is not None:
+            L = MoleculeFeatureExtractor.permute_orbitals(L_prev, S, L)
+        
+        U = np.linalg.pinv(mo_coeff) @ L
 
         return L, U
     
@@ -172,7 +173,11 @@ class MoleculeFeatureExtractor:
                 - atoms_1: List of atoms on which each MO is second most strongly centered.
                 - distances: Euclidean distance between each respective pair in atoms_0 and atoms_1.
         """
-        
+        ################
+        atoms_0 = []
+        atoms_1 = []
+        atoms_2 = []
+        ################
         charges_0 = []
         charges_1 = []
         charges_2 = []
@@ -188,6 +193,11 @@ class MoleculeFeatureExtractor:
                 charges_0.append(charge_0)
                 charges_1.append(0)
                 charges_2.append(0)
+                ##########################################
+                atoms_0.append(mol.atom_symbol(idx0))
+                atoms_1.append(0)
+                atoms_2.append(0)
+                ##########################################
                 inv_R_01.append(0)
                 inv_R_12.append(0)
                 inv_R_02.append(0)
@@ -196,6 +206,11 @@ class MoleculeFeatureExtractor:
                 idx0, idx1 = indices[0], indices[1]
                 charge_0 = mol.atom_charges()[idx0]
                 charge_1 = mol.atom_charges()[idx1]
+                ##########################################
+                atoms_0.append(mol.atom_symbol(idx0))
+                atoms_1.append(mol.atom_symbol(idx1))
+                atoms_2.append(0)
+                ##########################################
                 coord_0 = mol.atom_coord(idx0)  
                 coord_1 = mol.atom_coord(idx1)
                 
@@ -217,11 +232,18 @@ class MoleculeFeatureExtractor:
                 charges_0.append(charge_0)
                 charges_1.append(charge_1)
                 charges_2.append(charge_2)
+                ##########################################
+                atoms_0.append(mol.atom_symbol(idx0))
+                atoms_1.append(mol.atom_symbol(idx1))
+                atoms_2.append(mol.atom_symbol(idx2))
+                ##########################################
                 inv_R_01.append(1/np.linalg.norm(coord_1 - coord_0))
                 inv_R_12.append(1/np.linalg.norm(coord_2 - coord_1))
                 inv_R_02.append(1/np.linalg.norm(coord_2 - coord_0))
         
-        return charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12
+        ################################################################################################
+        return atoms_0, atoms_1, atoms_2, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12
+        ################################################################################################
 
     @staticmethod
     def find_mo_orientation_vectors(indices_list, mol):
@@ -400,7 +422,7 @@ class MoleculeFeatureExtractor:
 
             cubegen.orbital(mol, cube_filename, coeff_vector, nx=80, margin=3.0)
         
-    def extract_molecule_features(self):
+    def extract_molecule_features(self, L_prev = None):
 
         """
         Extract molecule features
@@ -422,17 +444,19 @@ class MoleculeFeatureExtractor:
         mo_occ = mf.mo_occ
 
 
-        C_loc, U = MoleculeFeatureExtractor.localize_orbitals_separately(self.mol, mo_coeff, mo_occ)
+        C_loc, U = MoleculeFeatureExtractor.localize_orbitals_separately(self.mol, mo_coeff, mo_occ, L_prev)
 
         #MoleculeFeatureExtractor.generate_cube_files(C_loc, self.mol)
 
         indices_list = MoleculeFeatureExtractor.population_analysis(self.mol, C_loc, mf)
-        charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12 = MoleculeFeatureExtractor.find_inverse_distances_and_atoms_on_which_MOs_are_centered(self.mol, indices_list)
+        ###################################################################################################################
+        atoms_0, atoms_1, atoms_2, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12 = MoleculeFeatureExtractor.find_inverse_distances_and_atoms_on_which_MOs_are_centered(self.mol, indices_list)
+        ###################################################################################################################
         rot_C_loc = MoleculeFeatureExtractor.rotate_orbitals(self.mol, C_loc, mf)
         maglz_expect = MoleculeFeatureExtractor.calculate_mag_lz(self.mol, rot_C_loc)
         mo_energies = MoleculeFeatureExtractor.calculate_energy(mf, U)
 
-
-        return maglz_expect, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12, mo_energies
-    
+        ############################################################################################################################
+        return maglz_expect, atoms_0, atoms_1, atoms_2, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12, mo_energies
+        ############################################################################################################################
 
