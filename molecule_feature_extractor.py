@@ -62,6 +62,7 @@ class MoleculeFeatureExtractor:
         n_occ = C_occ.shape[1]
         n_vir = C_vir.shape[1]
 
+        
         # Create small real antisymmetric matrices A_occ, A_vir
         np.random.seed(42)
         A_occ = np.random.randn(n_occ, n_occ)
@@ -78,21 +79,33 @@ class MoleculeFeatureExtractor:
         # Apply rotation: C' = C @ Q
         C_occ_rot = C_occ @ Q_occ
         C_vir_rot = C_vir @ Q_vir
-
+        
         #.pipek.PipekMezey, .edmiston.EdmistonRuedenberg
+        
+        boys_occ_method = lo.boys.Boys(mol, C_occ_rot)
+        boys_vir_method = lo.boys.Boys(mol, C_vir_rot)
 
-        L_occ_method = lo.pipek.PipekMezey(mol, C_occ_rot)
-        L_vir_method = lo.pipek.PipekMezey(mol, C_vir_rot)
+        boys_occ_method.init_guess = C_occ_rot
+        boys_vir_method.init_guess = C_vir_rot        
 
-        L_occ_method.init_guess = None
-        L_vir_method.init_guess = None        
+        B_occ = boys_occ_method.kernel()
+        B_vir = boys_vir_method.kernel()
+
+        S = mol.intor("int1e_ovlp")        
+        B_occ = MoleculeFeatureExtractor.permute_orbitals(C_occ, S ,B_occ)
+        B_vir = MoleculeFeatureExtractor.permute_orbitals(C_vir, S, B_vir)
+        
+        L_occ_method = lo.pipek.PipekMezey(mol, B_occ, pop_method = 'mulliken')
+        L_vir_method = lo.pipek.PipekMezey(mol, B_vir, pop_method = 'mulliken')
+
+        L_occ_method.init_guess = B_occ
+        L_vir_method.init_guess = B_vir        
 
         L_occ = L_occ_method.kernel()
         L_vir = L_vir_method.kernel()
-
-        S = mol.intor("int1e_ovlp")        
-        L_occ = MoleculeFeatureExtractor.permute_orbitals(C_occ, S ,L_occ)
-        L_vir = MoleculeFeatureExtractor.permute_orbitals(C_vir, S, L_vir)
+     
+        L_occ = MoleculeFeatureExtractor.permute_orbitals(B_occ, S ,L_occ)
+        L_vir = MoleculeFeatureExtractor.permute_orbitals(B_vir, S, L_vir)
 
         positivify_coeffmats([L_occ])
         positivify_coeffmats([L_vir])
@@ -351,7 +364,8 @@ class MoleculeFeatureExtractor:
                                 state_rot.coefficients, format_from=BasisType.BT_LIBINT, format_to=BasisType.BT_PYSCF)
 
             rot_C_loc[:, i] = coeffs_rot_pyscf[0][:, i]
-                
+        
+        
         return  np.array(rot_C_loc)
 
     @staticmethod
@@ -422,12 +436,16 @@ class MoleculeFeatureExtractor:
 
             cubegen.orbital(mol, cube_filename, coeff_vector, nx=80, margin=3.0)
         
-    def extract_molecule_features(self, L_prev = None):
+    def extract_molecule_features(self, L_prev = None, ntries = 10):
 
         """
-        Extract molecule features
+        Extract molecule features, with repeated localisation to pick the best
 
         Args:
+            ntries: int
+                    number of trials to run the localisation
+            L_prev: np.ndarray
+                    matrix with coefficients of the localised molecular orbitals of a previous molecule
 
         Returns:
             Tuple([List[str], List[str], List[float], List[float], List[float]):
@@ -443,16 +461,33 @@ class MoleculeFeatureExtractor:
         mo_coeff = mf.mo_coeff
         mo_occ = mf.mo_occ
 
+        # --- Try multiple localisations ---
+        best_val = -np.inf
+        best_L, best_U = None, None
 
-        C_loc, U = MoleculeFeatureExtractor.localize_orbitals_separately(self.mol, mo_coeff, mo_occ, L_prev)
+        for trial in range(ntries):
 
-        #MoleculeFeatureExtractor.generate_cube_files(C_loc, self.mol)
+            # run localization (may converge to different minima)
+            L, U = MoleculeFeatureExtractor.localize_orbitals_separately(self.mol, mo_coeff, mo_occ, L_prev)
+            
+            # compute PM functional
+            val_localized = lo.pipek.PipekMezey(
+                self.mol, L, pop_method = 'lowdin'
+            ).cost_function()
+
+            #keep the best-scoring result (maximize Pipek functional)
+            if val_localized > best_val:
+                best_val = val_localized
+                best_L, best_U = L, U
+        
+        C_loc, U = best_L, best_U
 
         indices_list = MoleculeFeatureExtractor.population_analysis(self.mol, C_loc, mf)
         ###################################################################################################################
         atoms_0, atoms_1, atoms_2, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12 = MoleculeFeatureExtractor.find_inverse_distances_and_atoms_on_which_MOs_are_centered(self.mol, indices_list)
         ###################################################################################################################
         rot_C_loc = MoleculeFeatureExtractor.rotate_orbitals(self.mol, C_loc, mf)
+        MoleculeFeatureExtractor.generate_cube_files(rot_C_loc, self.mol)
         maglz_expect = MoleculeFeatureExtractor.calculate_mag_lz(self.mol, rot_C_loc)
         mo_energies = MoleculeFeatureExtractor.calculate_energy(mf, U)
 

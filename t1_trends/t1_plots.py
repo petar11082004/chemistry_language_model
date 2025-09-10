@@ -65,17 +65,60 @@ def make_hcn(R, basis = "sto-3g"):
         unit = "Angstrom",
         basis = basis,
     )
+def make_co2(R, basis = "sto-3g"):
+    return gto.M(
+        atom = f"""
+        C1	0.0000	0.0000	0.0000
+        O2	0.0000	0.0000	{R}
+        O3	0.0000	0.0000	-1.1621
+        """,
+        unit = "Angstrom",
+        basis = basis,
+    )
+def make_hcocl(R, basis = "sto-3g"):
+    return gto.M(
+        atom = f"""
+        C1    0.0000    0.0000    0.0000
+        O2    0.0000    0.0000    {R}
+        Cl3   0.4462   -1.4581   -0.9767
+        H4   -0.2577    0.8420   -0.6633
+        """,
+        unit = "Angstrom",
+        basis = basis,
+    )
 
+def make_ethene(R, basis = "sto-3g"):
+    return gto.M(
+        atom = """
+        C1	0.0000	0.0000	0.6695
+        C2	0.0000	0.0000	-0.6695
+        H3	0.0000	0.9289	1.2321
+        H4	0.0000	-0.9289	1.2321
+        H5	0.0000	0.9289	-1.2321
+        H6	0.0000	-0.9289	-1.2321
+        """,
+        unit = "Angstrom",
+        basis = basis,
+    )
+
+#R0 = 1.0870
 R0 = 1.0640
+#R0 = 1.1621
+#R0 = 1.2005
 bond_lengths = np.linspace(0.9*R0, 1.1*R0, 9)
+#bond_lengths = np.array([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20])
+bond_lengths = np.array([1.0640]*1)
 
 t1_list = []
 C_list, L_list, U_list = [], [], [] 
 
 L_prev = None
 for R in bond_lengths:
-    mol = make_fiveatomic('C', 'H1', 'H2', 'H3', 'H4', R)
-    mol = make_hcn(R)
+    #mol = make_fiveatomic('C', 'H1', 'H2', 'H3', 'H4', R)
+    #mol = make_hcn(R)
+    mol = make_ethene(R)
+    #mol = make_co2(R)
+    #mol = make_hcocl(R)
     mf = scf.RHF(mol).run()
 
     L, U = MoleculeFeatureExtractor.localize_orbitals_separately(mol, mf.mo_coeff, mf.mo_occ, L_prev)
@@ -86,10 +129,10 @@ for R in bond_lengths:
     U_occ = U[:n_occ, :n_occ].copy()
     U_vir = U[n_occ:, n_occ:].copy()
 
-    mycc = cc.ccsd.CCSD(mf).run()
-    t1 = mycc.t1
+    #mycc = cc.ccsd.CCSD(mf).run()
+    #t1 = mycc.t1
 
-    t1 = U_occ.T @ t1 @ U_vir
+    #t1 = U_occ.T @ t1 @ U_vir
     L_df = pd.DataFrame(L)
     U_df = pd.DataFrame(U)
     
@@ -126,8 +169,8 @@ for R in bond_lengths:
     U_list.append(U.flatten())            
 
     # |t1|
-    t1 = np.abs(t1.flatten())
-    t1_list.append(t1)
+    #t1 = np.abs(t1.flatten())
+    #t1_list.append(t1)
 
 # Convert to arrays for plotting
 t1_list = np.array(t1_list)
@@ -138,7 +181,7 @@ U_list = np.array(U_list)
 
 
 plt.figure(figsize=(10,6))
-for i in range(min(5, t1_list.shape[1])):   # plot first 5 entries of U
+for i in range(t1_list.shape[1]):   # plot first 5 entries of U
     plt.plot(bond_lengths/R0, np.abs(t1_list[:, i]), label=f"t1[{i}]")
 plt.xlabel("bond length")
 plt.ylabel("t1 entries")
