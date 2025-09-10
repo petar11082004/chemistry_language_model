@@ -101,8 +101,8 @@ def make_ethene(R, basis = "sto-3g"):
         basis = basis,
     )
 
-#R0 = 1.0870
-R0 = 1.0640
+R0 = 1.0870
+#R0 = 1.0640
 #R0 = 1.1621
 #R0 = 1.2005
 bond_lengths = np.linspace(0.9*R0, 1.1*R0, 9)
@@ -114,9 +114,9 @@ C_list, L_list, U_list = [], [], []
 
 L_prev = None
 for R in bond_lengths:
-    #mol = make_fiveatomic('C', 'H1', 'H2', 'H3', 'H4', R)
+    mol = make_fiveatomic('C', 'H1', 'H2', 'H3', 'H4', R)
     #mol = make_hcn(R)
-    mol = make_ethene(R)
+    #mol = make_ethene(R)
     #mol = make_co2(R)
     #mol = make_hcocl(R)
     mf = scf.RHF(mol).run()

@@ -14,6 +14,7 @@ from qcmagic.core.drivers.statetools.rotate import rotate_state
 from qcmagic.interfaces.converters.pyscf import scf_to_state, configuration_to_mol
 from qcmagic.core.cspace.basis.basisshell import BasisType
 from qcmagic.core.sspace.statespace import positivify_coeffmats
+from qcmagic.core.cspace.basis.basisset import ConvolvedBasisSet
 from scipy.linalg import expm
 import math
 import pandas as pd
@@ -292,7 +293,7 @@ class MoleculeFeatureExtractor:
                 vecotr_01 = coord_1 - coord_0
                 vector_02 = coord_2 - coord_0
                 orientation_vector = np.cross(vecotr_01, vector_02)
-                mo_orientation_vectors.append(orientation_vector)
+                mo_orientation_vectors.append(orientation_vector/np.linalg.norm(orientation_vector))
         
         return mo_orientation_vectors
 
@@ -343,8 +344,17 @@ class MoleculeFeatureExtractor:
         """
 
         indices_list = MoleculeFeatureExtractor.population_analysis(mol, C_loc, mf)
+        print('#####     Indexes of atom on which orbitals are localised     ##### \n')
+        print(indices_list)
+        print('\n')
         vectors = MoleculeFeatureExtractor.find_mo_orientation_vectors(indices_list, mol)
+        print('#####     Vector orientation of orbital     ##### \n')
+        print(vectors)
+        print('\n')
         angles = MoleculeFeatureExtractor.find_mo_rotation_angles(vectors)
+        print('#####     Angle by which each orbotal should be rotated ##### \n')
+        print(angles)
+        print('\n')
 
         rot_C_loc = []
         nAO, nMO = C_loc.shape
@@ -365,6 +375,14 @@ class MoleculeFeatureExtractor:
 
             rot_C_loc[:, i] = coeffs_rot_pyscf[0][:, i]
         
+        state = scf_to_state(mf)
+        config = state.configuration
+        cbs=config.get_subconfiguration("ConvolvedBasisSet")
+        print(cbs.get_orbital_names())
+        
+        print('#####     rot_C_loc     #####')
+        print(pd.DataFrame(rot_C_loc))
+        print('\n')
         
         return  np.array(rot_C_loc)
 
