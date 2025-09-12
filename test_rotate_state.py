@@ -4,11 +4,11 @@ from molecule_feature_extractor import MoleculeFeatureExtractor
 # Define the methane molecule
 mol = gto.Mole()
 mol.atom = '''
-C1	0.0000	0.0000	0.0000
-H2	0.6276	0.6276	0.6276
-H3	0.6276	-0.6276	-0.6276
-H4	-0.6276	0.6276	-0.6276
-H5	-0.6276	-0.6276	0.6276
+C1    0.000   0.000   0.000
+H2    0.000   0.000   1.090
+H3    1.029   0.000  -0.363
+H4   -0.514   0.891  -0.363
+H5   -0.514  -0.891  -0.363
 '''
 mol.basis = 'sto-3g'   # you can also use '6-31g', 'cc-pvdz', etc.
 mol.unit = 'Angstrom'
