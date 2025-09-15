@@ -101,6 +101,36 @@ def make_ethene(R, basis = "sto-3g"):
         basis = basis,
     )
 
+def make_nh3(basis = "sto-3g"):
+    return gto.M(
+        atom = """
+        N1	0.0000	0.0000	0.0000
+        H2	0.0000	-0.9377	-0.3816
+        H3	0.8121	0.4689	-0.3816
+        H4	-0.8121	0.4689	-0.3816
+        """,
+        unit = "Angstrom",
+        basis = basis,
+    )
+
+def make_benzene(basis = "sto-3g"):
+    return gto.M(
+        atom = """
+        C1	0.0000	1.3970	0.0000
+        C2	1.2098	0.6985	0.0000
+        C3	1.2098	-0.6985	0.0000
+        C4	0.0000	-1.3970	0.0000
+        C5	-1.2098	-0.6985	0.0000
+        C6	-1.2098	0.6985	0.0000
+        H7	0.0000	2.4810	0.0000
+        H8	2.1486	1.2405	0.0000
+        H9	2.1486	-1.2405	0.0000
+        H10	0.0000	-2.4810	0.0000
+        H11	-2.1486	-1.2405	0.0000
+        H12	-2.1486	1.2405	0.0000
+        """
+    )
+
 R0 = 1.0870
 #R0 = 1.0640
 #R0 = 1.1621
@@ -119,6 +149,8 @@ for R in bond_lengths:
     mol = make_ethene(R)
     #mol = make_co2(R)
     #mol = make_hcocl(R)
+    #mol = make_nh3()
+    #mol = make_benzene()
     mf = scf.RHF(mol).run()
 
     L, U = MoleculeFeatureExtractor.localize_orbitals_separately(mol, mf.mo_coeff, mf.mo_occ, L_prev)

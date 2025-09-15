@@ -387,7 +387,7 @@ class MoleculeFeatureExtractor:
         indices_list = MoleculeFeatureExtractor.population_analysis(mol, C_loc, mf)
         vectors = MoleculeFeatureExtractor.find_mo_orientation_vectors(indices_list, mol)
         angles = MoleculeFeatureExtractor.find_mo_rotation_angles(vectors)
-
+        
         nAO, nMO = C_loc.shape
         rot_C_loc = np.zeros((nAO, nMO), dtype=C_loc.dtype)
 
@@ -419,6 +419,7 @@ class MoleculeFeatureExtractor:
 
             # Convert to PySCF input format
             atom_list = [(a.symbol, (a.position[0], a.position[1], a.position[2])) for a in atoms]
+            
             mol = gto.Mole()
             mol.build(
                 atom=atom_list,
@@ -525,10 +526,9 @@ class MoleculeFeatureExtractor:
         ###################################################################################################################
         rot_C_loc = MoleculeFeatureExtractor.rotate_orbitals(self.mol, C_loc, mf)
 
-        print('AOs')
-        print(self.mol.ao_labels())
-        print("### rot_C_loc ####")
-        print(pd.DataFrame(rot_C_loc))
+        df_rot_C_loc = pd.DataFrame(rot_C_loc)
+        df_rot_C_loc['AO'] = self.mol.ao_labels()
+        print(df_rot_C_loc)
         
         MoleculeFeatureExtractor.generate_cube_files(rot_C_loc, self.mol)
         maglz_expect = MoleculeFeatureExtractor.calculate_mag_lz(self.mol, rot_C_loc)
