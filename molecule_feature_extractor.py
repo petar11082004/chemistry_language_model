@@ -323,56 +323,19 @@ class MoleculeFeatureExtractor:
                 angles.append(math.radians(0))
         
         return angles
-
+    
     @staticmethod
-    def rotate_orbitals(mol, C_loc, mf):
+    def block_diagonalize_lz_matrix(lz_matrix, mol):
+        ao_slices = mol.aoslice_by_atom()
+        nao = mol.nao
+        lz_block = np.zeros_like(lz_matrix)
 
-        """
-        Rotate molecular orbital (MO) coefficients so that the localized orbitals align along the z-axis.
-
-        Args:
-            mol: pyscf.gto.Mole
-                The molecule object containing atomic and basis set information.
-            C_loc: numpy.ndarray
-                Localized molecular orbital coefficient matrix.
-            mf: pyscf.scf.hf.SCF
-                Mean-field (SCF) calculation object containing orbital information.
-
-        Returns:
-            numpy.ndarray:
-                rot_C_loc: The rotated molecular orbital coefficient matrix, aligned along the z-axis.
-        """
-
-        indices_list = MoleculeFeatureExtractor.population_analysis(mol, C_loc, mf)
-        vectors = MoleculeFeatureExtractor.find_mo_orientation_vectors(indices_list, mol)
-        angles = MoleculeFeatureExtractor.find_mo_rotation_angles(vectors)
-
-        rot_C_loc = []
-        nAO, nMO = C_loc.shape
-        rot_C_loc = np.zeros((nAO, nMO), dtype=C_loc.dtype)
-
-        for i, angle in enumerate(angles):
-
-            if angle != math.radians(0) and angle != math.radians(180):
-            
-                mf = scf.RHF(mol)
-                mf.mo_coeff = C_loc
-                state = scf_to_state(mf)
-                config = state.configuration
-                axis_of_rotation = np.cross(vectors[i], [0,0,1])
-                state_rot = rotate_state(state, angle, Vector3D(axis_of_rotation))
+        for ia in range(mol.natm):
+            p0, p1 = ao_slices[ia, :2]
+            lz_block[p0:p1, p0:p1] = lz_matrix[p0:p1, p0:p1]
         
-                cbs=config.get_subconfiguration("ConvolvedBasisSet")
-                coeffs_rot_pyscf = cbs.convert_coefficient_matrices(
-                                    state_rot.coefficients, format_from=BasisType.BT_LIBINT, format_to=BasisType.BT_PYSCF)
-
-                rot_C_loc[:, i] = coeffs_rot_pyscf[0][:, i]
-            
-            if angle ==0 or angle == math.radians(180):
-                rot_C_loc[:, i] = C_loc[:, i]
-        
-        return  np.array(rot_C_loc)
-
+        return lz_block
+    
     @staticmethod
     def calculate_mag_lz(mol, rot_C_loc):
 
@@ -392,14 +355,83 @@ class MoleculeFeatureExtractor:
 
         lz_3comp = gto.moleintor.getints('int1e_cg_irxp_sph', mol._atm, mol._bas, mol._env, comp = 3)
         lz_matrix = lz_3comp[2]
+        lz_matrix = MoleculeFeatureExtractor.block_diagonalize_lz_matrix(lz_matrix, mol)
 
         evals, evecs = np.linalg.eigh(lz_matrix)
         maglz = evecs @ np.diag(np.abs(evals)) @ evecs.T
 
-        #lz_squared = lz_matrix.conj().T @ lz_matrix 
+        #lz_squared = lz_matrix.conj().T @ lz_matrix
         maglz_expect = np.diag(rot_C_loc.conj().T @ maglz @ rot_C_loc).real
 
         return maglz_expect
+
+    @staticmethod
+    def rotate_orbitals(mol, C_loc, mf):
+
+        """
+        Rotate molecular orbital (MO) coefficients so that the localized orbitals align along the z-axis.
+
+        Args:
+            mol: (pyscf.gto.Mole)
+                The molecule object containing atomic and basis set information.
+            C_loc: (numpy.ndarray)
+                Localized molecular orbital coefficient matrix.
+            mf: (pyscf.scf.hf.SCF)
+                Mean-field (SCF) calculation object containing orbital information.
+
+        Returns:
+            numpy.ndarray:
+                rot_C_loc: The rotated molecular orbital coefficient matrix, aligned along the z-axis.
+        """
+
+        indices_list = MoleculeFeatureExtractor.population_analysis(mol, C_loc, mf)
+        vectors = MoleculeFeatureExtractor.find_mo_orientation_vectors(indices_list, mol)
+        angles = MoleculeFeatureExtractor.find_mo_rotation_angles(vectors)
+
+        nAO, nMO = C_loc.shape
+        rot_C_loc = np.zeros((nAO, nMO), dtype=C_loc.dtype)
+
+        base_mf = scf.RHF(mol)
+        base_mf.mo_coeff = C_loc
+        base_state = scf_to_state(base_mf)
+        config = base_state.configuration
+
+        for i, angle in enumerate(angles):
+
+            if np.isclose(angle % math.pi, 0.0, atol = 1e-8):
+                
+                rot_C_loc[:, i] = C_loc[:, i]
+               
+                print(MoleculeFeatureExtractor.calculate_mag_lz(mol, C_loc)[i])
+                continue
+
+            axis_of_rotation = np.cross(vectors[i], [0.0, 0.0, 1.0])
+            state_rot = rotate_state(base_state, angle, Vector3D(axis_of_rotation))
+    
+            cbs=config.get_subconfiguration("ConvolvedBasisSet")
+            coeffs_rot_pyscf = cbs.convert_coefficient_matrices(
+                state_rot.coefficients, 
+                format_from=BasisType.BT_LIBINT, 
+                format_to=BasisType.BT_PYSCF
+            )
+            geom = state_rot.configuration.get_subconfiguration('Geometry')
+            atoms = geom.structure.all_atoms
+
+            # Convert to PySCF input format
+            atom_list = [(a.symbol, (a.position[0], a.position[1], a.position[2])) for a in atoms]
+            mol = gto.Mole()
+            mol.build(
+                atom=atom_list,
+                basis="sto-3g",  
+                unit="Bohr"
+            )
+
+            coeffs = coeffs_rot_pyscf[0]
+            print(MoleculeFeatureExtractor.calculate_mag_lz(mol, coeffs)[i])
+            rot_C_loc[:, i] = coeffs[:, i]
+        
+        return  np.array(rot_C_loc)
+
 
     @staticmethod
     def calculate_energy(mf, U):
@@ -492,8 +524,12 @@ class MoleculeFeatureExtractor:
         atoms_0, atoms_1, atoms_2, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12 = MoleculeFeatureExtractor.find_inverse_distances_and_atoms_on_which_MOs_are_centered(self.mol, indices_list)
         ###################################################################################################################
         rot_C_loc = MoleculeFeatureExtractor.rotate_orbitals(self.mol, C_loc, mf)
+
+        print('AOs')
+        print(self.mol.ao_labels())
         print("### rot_C_loc ####")
         print(pd.DataFrame(rot_C_loc))
+        
         MoleculeFeatureExtractor.generate_cube_files(rot_C_loc, self.mol)
         maglz_expect = MoleculeFeatureExtractor.calculate_mag_lz(self.mol, rot_C_loc)
         mo_energies = MoleculeFeatureExtractor.calculate_energy(mf, U)

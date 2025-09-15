@@ -22,14 +22,14 @@ def permute_orbitals(L_prev,S, L):
     L_aln = L[:, perm].copy()
     return L_aln
 
-def make_fiveatomic(atom1, atom2, atom3, atom4, atom5, R, basis="sto-3g"):
+def make_methane(R, basis="sto-3g"):
     return gto.M(
         atom = f"""
-            {atom1} 0.0 0.0 0.0
-            {atom2} 0.0 0.0 {R}
-            {atom3} 1.0250   0.0000  -0.3623
-            {atom4} -0.5125   0.8877  -0.3623
-            {atom5} -0.5125  -0.8877  -0.3623
+            C1    0.000   0.000   0.000
+            H2    0.000   0.000   {R}
+            H3    1.029   0.000  -0.363
+            H4   -0.514   0.891  -0.363
+            H5   -0.514  -0.891  -0.363
         """,
         unit = "Angstrom",
         basis = basis,
@@ -107,16 +107,16 @@ R0 = 1.0870
 #R0 = 1.2005
 bond_lengths = np.linspace(0.9*R0, 1.1*R0, 9)
 #bond_lengths = np.array([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20])
-bond_lengths = np.array([1.0640]*1)
+bond_lengths = np.array([1.0870]*1)
 
 t1_list = []
 C_list, L_list, U_list = [], [], [] 
 
 L_prev = None
 for R in bond_lengths:
-    mol = make_fiveatomic('C', 'H1', 'H2', 'H3', 'H4', R)
+    #mol = make_methane(R)
     #mol = make_hcn(R)
-    #mol = make_ethene(R)
+    mol = make_ethene(R)
     #mol = make_co2(R)
     #mol = make_hcocl(R)
     mf = scf.RHF(mol).run()
