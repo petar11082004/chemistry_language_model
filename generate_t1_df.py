@@ -21,7 +21,7 @@ def generate_t1_df(mol: gto.Mole) -> pd.DataFrame:
     n_occ = int((mo_occ>0).sum())
 
     mfe = MoleculeFeatureExtractor(mol)
-    maglz_expect, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12,mo_energies = mfe.extract_molecule_features()
+    maglz_expect,_, _, _, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12,mo_energies = mfe.extract_molecule_features()
 
     df_mo = pd.DataFrame({
         "maglz_expect": maglz_expect,

@@ -22,114 +22,28 @@ def permute_orbitals(L_prev,S, L):
     L_aln = L[:, perm].copy()
     return L_aln
 
-def make_methane(R, basis="sto-3g"):
+def make_h2(basis = "sto-3g"):
     return gto.M(
         atom = f"""
-            C1    0.000   0.000   0.000
-            H2    0.000   0.000   {R}
-            H3    1.029   0.000  -0.363
-            H4   -0.514   0.891  -0.363
-            H5   -0.514  -0.891  -0.363
+        H1	0.0000	0.0000	0.0000
+        H2	0.0000	0.0000	0.7414
         """,
         unit = "Angstrom",
         basis = basis,
     )
 
-def make_hf(R, basis = "sto-3g"):
+def make_molecule(basis = "sto-3g"):
     return gto.M(
         atom = f"""
-        F1	0.0000	0.0000	0.0000
-        H2	0.0000	0.0000	{R}
+        H1	0.0000	-0.9718	0.9211
+        N2	0.0000	0.0648	0.5834
+        O3	0.0000	0.0648	-0.6256
         """,
         unit = "Angstrom",
         basis = basis,
     )
 
-def make_f2(R, basis = "sto-3g"):
-    return gto.M(
-        atom = f"""
-        F1	0.0000	0.0000	0.0000
-        F2	0.0000	0.0000	{R}
-        """,
-        unit = "Angstrom",
-        basis = basis,
-    )
 
-def make_hcn(R, basis = "sto-3g"):
-    return gto.M(
-        atom = f"""
-        C1	0.0000	0.0000	0.0000
-        H2	0.0000	0.0000	{R}
-        N3	0.0000	0.0000	-1.1560
-        """,
-        unit = "Angstrom",
-        basis = basis,
-    )
-def make_co2(R, basis = "sto-3g"):
-    return gto.M(
-        atom = f"""
-        C1	0.0000	0.0000	0.0000
-        O2	0.0000	0.0000	{R}
-        O3	0.0000	0.0000	-1.1621
-        """,
-        unit = "Angstrom",
-        basis = basis,
-    )
-def make_hcocl(R, basis = "sto-3g"):
-    return gto.M(
-        atom = f"""
-        C1    0.0000    0.0000    0.0000
-        O2    0.0000    0.0000    {R}
-        Cl3   0.4462   -1.4581   -0.9767
-        H4   -0.2577    0.8420   -0.6633
-        """,
-        unit = "Angstrom",
-        basis = basis,
-    )
-
-def make_ethene(R, basis = "sto-3g"):
-    return gto.M(
-        atom = """
-        C1	0.0000	0.0000	0.6695
-        C2	0.0000	0.0000	-0.6695
-        H3	0.0000	0.9289	1.2321
-        H4	0.0000	-0.9289	1.2321
-        H5	0.0000	0.9289	-1.2321
-        H6	0.0000	-0.9289	-1.2321
-        """,
-        unit = "Angstrom",
-        basis = basis,
-    )
-
-def make_nh3(basis = "sto-3g"):
-    return gto.M(
-        atom = """
-        N1	0.0000	0.0000	0.0000
-        H2	0.0000	-0.9377	-0.3816
-        H3	0.8121	0.4689	-0.3816
-        H4	-0.8121	0.4689	-0.3816
-        """,
-        unit = "Angstrom",
-        basis = basis,
-    )
-
-def make_benzene(basis = "sto-3g"):
-    return gto.M(
-        atom = """
-        C1	0.0000	1.3970	0.0000
-        C2	1.2098	0.6985	0.0000
-        C3	1.2098	-0.6985	0.0000
-        C4	0.0000	-1.3970	0.0000
-        C5	-1.2098	-0.6985	0.0000
-        C6	-1.2098	0.6985	0.0000
-        H7	0.0000	2.4810	0.0000
-        H8	2.1486	1.2405	0.0000
-        H9	2.1486	-1.2405	0.0000
-        H10	0.0000	-2.4810	0.0000
-        H11	-2.1486	-1.2405	0.0000
-        H12	-2.1486	1.2405	0.0000
-        """
-    )
 
 R0 = 1.0870
 #R0 = 1.0640
@@ -144,13 +58,7 @@ C_list, L_list, U_list = [], [], []
 
 L_prev = None
 for R in bond_lengths:
-    #mol = make_methane(R)
-    #mol = make_hcn(R)
-    mol = make_ethene(R)
-    #mol = make_co2(R)
-    #mol = make_hcocl(R)
-    #mol = make_nh3()
-    #mol = make_benzene()
+    mol = make_molecule()
     mf = scf.RHF(mol).run()
 
     L, U = MoleculeFeatureExtractor.localize_orbitals_separately(mol, mf.mo_coeff, mf.mo_occ, L_prev)

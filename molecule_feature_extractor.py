@@ -19,6 +19,8 @@ from scipy.linalg import expm
 import math
 import pandas as pd
 from scipy.optimize import linear_sum_assignment
+from qcmagic.interfaces.converters.pyscf import configuration_to_mol
+
     
 class MoleculeFeatureExtractor:
 
@@ -27,10 +29,29 @@ class MoleculeFeatureExtractor:
 
     @staticmethod
     def permute_orbitals(C ,S, L):
+        """
+        Permute localised orbitals L to best match reference orbitals C by maximising orbital overlap
+
+        Args:
+            C (np.ndarray): reference orbital coefficients
+            S (np.ndarray): AO overlap matrix
+            L (np.ndarray): Localised orital coefficients.
+        
+        Returns:
+            np.ndarray: Localised orbitals reordered to best align with C
+        """
+
+        # Overlap between reference and localised orbitals
         O = C.T @ S @ L
+
+        # Solve assignment problem: maximise |O| using Hungarian algorithm 
         r,c = linear_sum_assignment(-np.abs(O))
+
+        # Build permutation mapping
         perm = np.empty_like(c)
         perm[r] = c
+
+        # Reorder localised orbitals
         L_aln = L[:, perm].copy()
         return L_aln
 
@@ -38,134 +59,119 @@ class MoleculeFeatureExtractor:
     def localize_orbitals_separately(mol, mo_coeff, mo_occ, L_prev =None):
 
         """
-        Localize occupied and virtual molecular orbitals separately using PipekMezey method.
+        Localize occupied and virtual molecular orbitals separately using the Pipek–Mezey method.
 
         Args:
-            mol: pyscf.gto.Mole
-                Molecule object.
-            mo_coeff: numpy.ndarray
-                MO coefficients
-            mf: pyscf.scf.hf.SCF
-                Mean-field (SCF) calculation result.
+            mol (pyscf.gto.Mole): Molecule object.
+            mo_coeff (np.ndarray): Molecular orbital coefficients.
+            mo_occ (np.ndarray): Molecular orbital occupations.
+            L_prev (np.ndarray, optional): Reference localized orbitals for permutation.
 
         Returns:
-            numpy.ndarray:
-                stacked localized occupied and virtual orbitals.
+            tuple:
+                L (np.ndarray): Localized orbitals (occupied + virtual).
+                U (np.ndarray): Transformation matrix from canonical to localized orbitals.
         """
-        #Create boolean masks
+
+        # --- Separate occupied and virtual orbitals ---
         occ_idx = mo_occ > 0
         vir_idx = mo_occ == 0
 
-        # Use masks to select occupied and virtual orbitals
         C_occ = mo_coeff[:, occ_idx]
         C_vir = mo_coeff[:, vir_idx]
 
         n_occ = C_occ.shape[1]
         n_vir = C_vir.shape[1]
 
-        
-        # Create small real antisymmetric matrices A_occ, A_vir
+        # --- Apply small random orthogonal rotations ---
         np.random.seed(42)
         A_occ = np.random.randn(n_occ, n_occ)
         A_vir = np.random.randn(n_vir, n_vir)
-        A_occ = A_occ - A_occ.T  # make it antisymmetric
-        A_vir = A_vir - A_vir.T  # make it antisymmetric
-        A_occ*= 0.5  # scale to make rotation small
-        A_vir*= 0.5  # scale to make rotation small
 
-        # Compute real orthogonal matrix Q = exp(A)
-        Q_occ = expm(A_occ)  # real orthogonal
-        Q_vir = expm(A_vir) #real orthogonal
+        A_occ = 0.5 * (A_occ - A_occ.T)  # antisymmetric
+        A_vir = 0.5 * (A_vir - A_vir.T)  # antisymmetric
 
-        # Apply rotation: C' = C @ Q
+        Q_occ = expm(A_occ)  # orthogonal rotation
+        Q_vir = expm(A_vir)
+
         C_occ_rot = C_occ @ Q_occ
         C_vir_rot = C_vir @ Q_vir
-        
-        #.pipek.PipekMezey, .edmiston.EdmistonRuedenberg
-        
-        boys_occ_method = lo.boys.Boys(mol, C_occ_rot)
-        boys_vir_method = lo.boys.Boys(mol, C_vir_rot)
 
-        boys_occ_method.init_guess = C_occ_rot
-        boys_vir_method.init_guess = C_vir_rot        
-
-        B_occ = boys_occ_method.kernel()
-        B_vir = boys_vir_method.kernel()
-
+        # --- Overlap matrix ---
         S = mol.intor("int1e_ovlp")        
-        B_occ = MoleculeFeatureExtractor.permute_orbitals(C_occ, S ,B_occ)
-        B_vir = MoleculeFeatureExtractor.permute_orbitals(C_vir, S, B_vir)
         
-        L_occ_method = lo.pipek.PipekMezey(mol, B_occ, pop_method = 'mulliken')
-        L_vir_method = lo.pipek.PipekMezey(mol, B_vir, pop_method = 'mulliken')
+        # --- Localize separately with Pipek–Mezey ---
+        L_occ_method = lo.pipek.PipekMezey(mol, C_occ_rot, pop_method = 'mulliken')
+        L_vir_method = lo.pipek.PipekMezey(mol, C_vir_rot, pop_method = 'mulliken')
 
-        L_occ_method.init_guess = B_occ
-        L_vir_method.init_guess = B_vir        
+        L_occ_method.init_guess = C_occ_rot
+        L_vir_method.init_guess = C_vir_rot        
 
         L_occ = L_occ_method.kernel()
         L_vir = L_vir_method.kernel()
-     
-        L_occ = MoleculeFeatureExtractor.permute_orbitals(B_occ, S ,L_occ)
-        L_vir = MoleculeFeatureExtractor.permute_orbitals(B_vir, S, L_vir)
+
+        # Ensure consistent orbital ordering
+        L_occ = MoleculeFeatureExtractor.permute_orbitals(C_occ_rot, S ,L_occ)
+        L_vir = MoleculeFeatureExtractor.permute_orbitals(C_vir_rot, S, L_vir)
 
         positivify_coeffmats([L_occ])
         positivify_coeffmats([L_vir])
 
+        # --- Stack localized occupied and virtual orbitals ---
         L = np.hstack([L_occ, L_vir])
 
+        # Optional: permute relative to previous localization
         if L_prev is not None:
             L = MoleculeFeatureExtractor.permute_orbitals(L_prev, S, L)
         
+        # --- Transformation matrix from canonical orbitals ---
         U = np.linalg.pinv(mo_coeff) @ L
 
         return L, U
     
     @staticmethod
     def population_analysis(mol, C_loc, mf):
-
         """
-        Perform Mulliken population analysis on molecular orbitals 
-        to determine which atoms each orbital is centered on.
+        Perform Mulliken population analysis on localized molecular orbitals .
+        For each orbital, compute its Mulliken population per atom and assign it to the atoms where the orbital is mainly localised.
         
         Args:
-            mol: pyscf.gto.Mole
-                Molecule object.
-            C_loc: numpy.ndarray
-                localized molecular orbitals coefficients.
-            mf: pyscf.scf.hf.SCF
-                Mean-field (SCF) calculation result.
+            mol (pyscf.gto.Mole): Molecule object.
+            C_loc (numpy.ndarray): Localized molecular orbitals coefficients.
+            mf (pyscf.scf.hf.SCF): Mean-field (SCF) calculation result.
 
         Returns:
-            List([List[int]):
-                indices_list: list with the indexes of atoms on which the orbitals are mainly cenetered on
+            list[list[int]]: For each orbital, a list of 1-3 atom indices (0-based) where the orbital has the largest Mulliken population.
         """
 
-        # Get overlap matrix
+        # AO overlap matrix
         S = mf.get_ovlp()
 
-        # Atom and AO info
-        n_aos = mol.nao
         n_atoms = mol.natm
-
         indices_list = []
-
+        
+        # Precompute products to avoid recomputing inside the loop
         C_dagger = C_loc.conj().T
         SC = S @ C_loc
-        for i in range(C_loc.shape[1]):
-            c_dagger = C_dagger[i, :] # i-th localized orbital
-            sc = SC[:, i]
-            pop_per_atom = np.zeros(n_atoms)
 
+        for i in range(C_loc.shape[1]):
+             # i-th localized orbital
+            c_dagger = C_dagger[i, :]
+            sc = SC[:, i]
+
+            # Population per atom
+            pop_per_atom = np.zeros(n_atoms)
             for A in range(n_atoms):
                 ao_slice = mol.aoslice_by_atom()[A]
                 p0, p1 = ao_slice[2], ao_slice[3]
 
                 pop_per_atom[A] = c_dagger[p0:p1] @ sc[p0:p1]
 
-            counter = sum(pop_per_atom >= 0.15)
-            counter = min(max(counter, 1), 3) 
-            indices = pop_per_atom.argsort()[-counter:][::-1]
-            
+            # Keep 1–3 atoms where population is significant (≥ 0.15)
+            num_atoms = sum(pop_per_atom >= 0.15)
+            num_atoms = min(max(num_atoms, 1), 3) 
+
+            indices = pop_per_atom.argsort()[-num_atoms:][::-1]
             indices_list.append(indices)
 
         return indices_list
@@ -174,118 +180,95 @@ class MoleculeFeatureExtractor:
     def find_inverse_distances_and_atoms_on_which_MOs_are_centered(mol, indices_list):
 
         """
-        Find the atoms (and their respective distances) on which the molecular orbitals are primarily centered.
+        For each localised molecular orbital (LMO), find the atoms it is centered on,
+        their charges, and inverse interatomic distances between them.
+
+        Handles cases where an orbital is assigned to 1-3 atoms.
 
         Args:
-            indices_list (List[List[int]]): 
-                A list of lists, where each sublist contains the indices of atoms that a 
-                localized molecular orbital is centered on, sorted by population percentage.
+            mol (pyscf.gto.Mole): Molecule object.
+            indices_list (list[list[int]]): For each orbital,  a list of 1-3 atom indices
+                (sorted py population weight)
 
         Returns:
-            Tuple[List[str], List[str], List[float]]: 
-                - atoms_0: List of atoms on which each MO is most strongly centered.
-                - atoms_1: List of atoms on which each MO is second most strongly centered.
-                - distances: Euclidean distance between each respective pair in atoms_0 and atoms_1.
+            tuple: 
+                atoms_0: (list[str]): Symbol of the atom most strongly associated with each orbital
+                atoms_1 (list[Union[str, int]]): Second atom symbol, or 0 if not applicable
+                atoms_2 (list[Union[str, int]]): Third atom symbol, or 0 if not applicable
+                charges_0 (list[int]): Nuclear charge of atom atom_0.
+                charges_1 (list[int]): Nuclear charge of atom_1 (0 if not applicable).
+                charges_2 (list[int]): Nuclear charge of atom_2 (0 if not applicable).
+                inv_R_01 (list[float]): 1/ distance(atom_0, atom_1), or 0 if not applicable.
+                inv_R_02 (list[float]): 1/ distance(atom_0, atom_2), or 0 if not applicable.
+                inv_R_12 (list[float]): 1/ distance(atom_1, atom_2), or 0 if not applicable.
         """
-        ################
-        atoms_0 = []
-        atoms_1 = []
-        atoms_2 = []
-        ################
-        charges_0 = []
-        charges_1 = []
-        charges_2 = []
-        inv_R_01 =[]
-        inv_R_12 = []
-        inv_R_02 = []
+        
+        atoms_0, atoms_1, atoms_2 = [], [], []
+        charges_0, charges_1, charges_2 = [], [], []
+        inv_R_01, inv_R_12, inv_R_02 = [], [], []
 
         for indices in indices_list:
+            # Pad with zeros if fewer than 3 atoms
+            padded = list(indices) + [None] * (3-len(indices))
+            idx0, idx1, idx2 = padded[:3]
+            
+            # Atom symbols
+            atoms_0.append(mol.atom_symbol(idx0) if idx0 is not None else 0)
+            atoms_1.append(mol.atom_symbol(idx1) if idx1 is not None else 0)
+            atoms_2.append(mol.atom_symbol(idx2) if idx2 is not None else 0)
 
-            if len(indices)== 1:
-                idx0 = indices[0]
-                charge_0 = mol.atom_charges()[idx0]
-                charges_0.append(charge_0)
-                charges_1.append(0)
-                charges_2.append(0)
-                ##########################################
-                atoms_0.append(mol.atom_symbol(idx0))
-                atoms_1.append(0)
-                atoms_2.append(0)
-                ##########################################
-                inv_R_01.append(0)
-                inv_R_12.append(0)
-                inv_R_02.append(0)
-            
-            elif len(indices) == 2:
-                idx0, idx1 = indices[0], indices[1]
-                charge_0 = mol.atom_charges()[idx0]
-                charge_1 = mol.atom_charges()[idx1]
-                ##########################################
-                atoms_0.append(mol.atom_symbol(idx0))
-                atoms_1.append(mol.atom_symbol(idx1))
-                atoms_2.append(0)
-                ##########################################
-                coord_0 = mol.atom_coord(idx0)  
-                coord_1 = mol.atom_coord(idx1)
-                
-                charges_0.append(charge_0)
-                charges_1.append(charge_1)
-                charges_2.append(0)
-                inv_R_01.append(1/np.linalg.norm(coord_1 - coord_0))
-                inv_R_12.append(0)
-                inv_R_02.append(0)
-            
-            elif len(indices) == 3:
-                idx0, idx1, idx2 = indices[0], indices[1], indices[2]
-                charge_0 = mol.atom_charges()[idx0]
-                charge_1 = mol.atom_charges()[idx1]
-                charge_2 = mol.atom_charges()[idx2]
-                coord_0 = mol.atom_coord(idx0)  
-                coord_1 = mol.atom_coord(idx1)
-                coord_2 = mol.atom_coord(idx2)
-                charges_0.append(charge_0)
-                charges_1.append(charge_1)
-                charges_2.append(charge_2)
-                ##########################################
-                atoms_0.append(mol.atom_symbol(idx0))
-                atoms_1.append(mol.atom_symbol(idx1))
-                atoms_2.append(mol.atom_symbol(idx2))
-                ##########################################
-                inv_R_01.append(1/np.linalg.norm(coord_1 - coord_0))
-                inv_R_12.append(1/np.linalg.norm(coord_2 - coord_1))
-                inv_R_02.append(1/np.linalg.norm(coord_2 - coord_0))
+            # Charges
+            charges_0.append(mol.atom_charges()[idx0] if idx0 is not None else 0)
+            charges_1.append(mol.atom_charges()[idx1] if idx1 is not None else 0)
+            charges_2.append(mol.atom_charges()[idx2] if idx2 is not None else 0)
+
+            # Coordiantes
+            coord_0 = mol.atom_coord(idx0) if idx0 is not None else None
+            coord_1 = mol.atom_coord(idx1) if idx1 is not None else None
+            coord_2 = mol.atom_coord(idx2) if idx2 is not None else None
+
+            #Distances
+            inv_R_01.append(1 / np.linalg.norm(coord_1 - coord_0) if idx0 is not None and idx1 is not None else 0)
+            inv_R_02.append(1 / np.linalg.norm(coord_2 - coord_0) if idx0 is not None and idx2 is not None else 0)
+            inv_R_12.append(1 / np.linalg.norm(coord_2 - coord_1) if idx1 is not None and idx2 is not None else 0)
         
-        ################################################################################################
         return atoms_0, atoms_1, atoms_2, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12
-        ################################################################################################
 
     @staticmethod
     def find_mo_orientation_vectors(indices_list, mol):
 
         """
-        Find the orientations (vectors) of the localized molecular orbitals
+        Compute orientation vectors for localised molecular orbitals (LMOs).
 
+        - For orbitals centered on a single atom: return a zero vector (no orientation).
+        - For orbitals centered on two atoms: return the bond vector (atom1 - atom0).
+        - For orbitals centered on three atoms: return the normal vector to the plane defined by the three atoms (via cross product).
+        
         Args:
-            indices_list: List(List[int])
-                The indexes of the atoms on which the localized molecular orbital is centered on, sorted by population percentage
+            indices_list (list[list[int]]): For each orbital, a list of atom indices
+                (sorted by population contribution)
+            mol (pyscf.gto.Mole): Molecule object.
 
         Returns:
-            List[List[float]]:
-                mo_orientation_vectors: vectors describing the orientation of the localized MOs
+            list[np.ndarray]: Orientation vectors for each orbital.
         """
 
         mo_orientation_vectors = []
 
         for indices in indices_list:
             if len(indices) == 1:
+                # Single atom - no orientation
                 mo_orientation_vectors.append(np.array([0, 0, 0]))
+
             if len(indices) == 2:
+                # Two atoms - bond direction
                 idx0, idx1 = indices[0], indices[1]
                 coord_0 = mol.atom_coord(idx0)  
                 coord_1 = mol.atom_coord(idx1)
                 mo_orientation_vectors.append(coord_1 - coord_0)
             
             elif len(indices) == 3:
+                # Three atoms - plane normal
                 idx0, idx1, idx2 = indices[0], indices[1], indices[2]
                 coord_0 = mol.atom_coord(idx0)  
                 coord_1 = mol.atom_coord(idx1)
@@ -293,7 +276,7 @@ class MoleculeFeatureExtractor:
                 vecotr_01 = coord_1 - coord_0
                 vector_02 = coord_2 - coord_0
                 orientation_vector = np.cross(vecotr_01, vector_02)
-                mo_orientation_vectors.append(orientation_vector/np.linalg.norm(orientation_vector))
+                mo_orientation_vectors.append(orientation_vector)
         
         return mo_orientation_vectors
 
@@ -301,17 +284,18 @@ class MoleculeFeatureExtractor:
     def find_mo_rotation_angles(mo_orientation_vectors):
 
         """
-        Find angle of rotation for the MOs to be aligned with the z-axis
+        Compute the angle (in radians) required to rotate each orbital orientation vector onto the z-axis
 
+        - If the vector is zero (e.g., orbital centered on a single atom), the angles is defined as 0
+        
         Args:
-            mo_orientation_vectors: List[List[float]]
-                vectors describing the orientation of the localized MOs
+            mo_orientation_vectors (list[np.ndarray]): Orientation vectors of localised molecular orbitals
 
         Returns:
-            List[float]:
-                angles: The rotation angles for each MO
+            list[float]: Rotation angles (in radians) for each orbital.
         """
 
+        z_axis = np.array([0.0, 0.0, 1.0])
         angles = []
 
         for vector in mo_orientation_vectors:
@@ -326,129 +310,142 @@ class MoleculeFeatureExtractor:
     
     @staticmethod
     def block_diagonalize_lz_matrix(lz_matrix, mol):
+        """
+        Construct a block-diagonal version of the Lz matrix in the AO basis,
+        where only intra-atomic blocks are retained.
+
+        Args:
+            lz_matrix (np.ndarray): The full Lz matrix in the AO basis (nao x nao).
+            mol (pyscf.gto.Mole): Molecule object.
+
+        Returns:
+            np.ndarray: Block-diagonalised Lz matrix (same shape as input),
+            where off-diagonal couplings between different atoms are set to 0.
+        """
         ao_slices = mol.aoslice_by_atom()
-        nao = mol.nao
         lz_block = np.zeros_like(lz_matrix)
 
-        for ia in range(mol.natm):
-            p0, p1 = ao_slices[ia, :2]
-            lz_block[p0:p1, p0:p1] = lz_matrix[p0:p1, p0:p1]
-        
+        for A in range(mol.natm):
+                ao_slice = ao_slices[A]
+                p0, p1 = ao_slice[2], ao_slice[3]
+                lz_block[p0:p1, p0:p1] = lz_matrix[p0:p1, p0:p1]
+
         return lz_block
     
     @staticmethod
     def calculate_mag_lz(mol, rot_C_loc):
 
         """
-        calculate the expectation values of |Lz| for the molecular orbitals 
+        Calculate the expectation values of |Lz| for the localised molecular orbitals. 
 
+        Uses the block-diagonalised atomic orbital Lz operator to compute orbital angular momentum along the z-axis.
+        
         Args:
-            mol: pyscf.gto.Mole
-                Molecule object.
-            rot_C_loc: numpy.ndarray
-                localized molecular orbitals coefficients.
+            mol (pyscf.gto.Mole): Molecule object.
+            rot_C_loc (numpy.ndarray): Localized molecular orbitals coefficients.
             
         Returns:
-            List[float]:
-                maglz_expect: the expectation values of |Lz|for each MO, when aligned with the z-axis
+            np.ndaray: Expectation values of |Lz| for each orbital.
         """
 
-        lz_3comp = gto.moleintor.getints('int1e_cg_irxp_sph', mol._atm, mol._bas, mol._env, comp = 3)
-        lz_matrix = lz_3comp[2]
+        # AO angular momentum integrals (3 components: Lx, Ly, Lz)
+        lz_integrals = gto.moleintor.getints('int1e_cg_irxp_sph', mol._atm, mol._bas, mol._env, comp = 3)
+        lz_matrix = lz_integrals[2] # Select Lz
         lz_matrix = MoleculeFeatureExtractor.block_diagonalize_lz_matrix(lz_matrix, mol)
 
+        # Diagonalise and take absolute values of eigenvalues
         evals, evecs = np.linalg.eigh(lz_matrix)
         maglz = evecs @ np.diag(np.abs(evals)) @ evecs.T
 
-        #lz_squared = lz_matrix.conj().T @ lz_matrix
+        # Compute <MO| |Lz| |MO>
         maglz_expect = np.diag(rot_C_loc.conj().T @ maglz @ rot_C_loc).real
 
         return maglz_expect
 
     @staticmethod
-    def rotate_orbitals(mol, C_loc, mf):
+    def rotate_orbitals_and_calculate_mag_lz(mol, C_loc, mf):
 
         """
-        Rotate molecular orbital (MO) coefficients so that the localized orbitals align along the z-axis.
-
+        Rotate localized molecular orbitals so they align with the z-axis, and calculate the expectation values of |Lz|.
+        
+        - Orbitals on a single atom: return 0.
+        - Orbitals already aligned with z (angle = 0 or pi): use unrotated |Lz|
+        - Otherwise: rotate the state, transform coefficients back into PySCF format, and recalculate |Lz|.
+        
         Args:
-            mol: (pyscf.gto.Mole)
-                The molecule object containing atomic and basis set information.
-            C_loc: (numpy.ndarray)
-                Localized molecular orbital coefficient matrix.
-            mf: (pyscf.scf.hf.SCF)
-                Mean-field (SCF) calculation object containing orbital information.
+            mol (pyscf.gto.Mole): Molecule object
+            C_loc (numpy.ndarray) Localised MO coefficients.
+            mf (pyscf.scf.hf.SCF): Mean-field calculation (provides occupations).
 
         Returns:
-            numpy.ndarray:
-                rot_C_loc: The rotated molecular orbital coefficient matrix, aligned along the z-axis.
+            np.ndarray:
+                maglz_expect: expectation values of |Lz| for each rotated orbital.
         """
 
+        # Step 1: Get atom assignment and orientation vectors
         indices_list = MoleculeFeatureExtractor.population_analysis(mol, C_loc, mf)
         vectors = MoleculeFeatureExtractor.find_mo_orientation_vectors(indices_list, mol)
         angles = MoleculeFeatureExtractor.find_mo_rotation_angles(vectors)
-        
-        nAO, nMO = C_loc.shape
-        rot_C_loc = np.zeros((nAO, nMO), dtype=C_loc.dtype)
 
+        # Step 2: Build reference state with localised orbitals
         base_mf = scf.RHF(mol)
         base_mf.mo_coeff = C_loc
         base_state = scf_to_state(base_mf)
         config = base_state.configuration
 
+        maglz_expect = []
+
         for i, angle in enumerate(angles):
 
-            if np.isclose(angle % math.pi, 0.0, atol = 1e-8):
-                
-                rot_C_loc[:, i] = C_loc[:, i]
-               
-                print(MoleculeFeatureExtractor.calculate_mag_lz(mol, C_loc)[i])
+            # case A: Orbital localised on a single atom - no angular momentum
+            if len(indices_list[i]) == 1:
+                maglz_expect.append(0)
                 continue
-
+            
+            # case B: alreaady aligned with z-axis (angle ~ 0 or π)
+            if np.isclose(angle % math.pi, 0.0, atol = 1e-8):
+               
+                maglz_expect.append(MoleculeFeatureExtractor.calculate_mag_lz(mol, C_loc)[i])
+                continue
+            
+            # Case C: General rotation of quantum state
             axis_of_rotation = np.cross(vectors[i], [0.0, 0.0, 1.0])
+
+            # Rotate quantum state
             state_rot = rotate_state(base_state, angle, Vector3D(axis_of_rotation))
-    
+
+            # Convert rotated coefficients into PySCF AO basis
             cbs=config.get_subconfiguration("ConvolvedBasisSet")
             coeffs_rot_pyscf = cbs.convert_coefficient_matrices(
                 state_rot.coefficients, 
                 format_from=BasisType.BT_LIBINT, 
                 format_to=BasisType.BT_PYSCF
             )
-            geom = state_rot.configuration.get_subconfiguration('Geometry')
-            atoms = geom.structure.all_atoms
 
-            # Convert to PySCF input format
-            atom_list = [(a.symbol, (a.position[0], a.position[1], a.position[2])) for a in atoms]
-            
-            mol = gto.Mole()
-            mol.build(
-                atom=atom_list,
-                basis="sto-3g",  
-                unit="Bohr"
-            )
-
+            mol_rot = configuration_to_mol(state_rot.configuration)
             coeffs = coeffs_rot_pyscf[0]
-            print(MoleculeFeatureExtractor.calculate_mag_lz(mol, coeffs)[i])
-            rot_C_loc[:, i] = coeffs[:, i]
+
+            maglz_expect.append(MoleculeFeatureExtractor.calculate_mag_lz(mol_rot, coeffs)[i])
         
-        return  np.array(rot_C_loc)
+        return  np.array(maglz_expect)
 
 
     @staticmethod
     def calculate_energy(mf, U):
 
         """
-        Calculate the energies of the localized molecular orbitals.
+        Calculate localised Molecular orbital (LMO) energies.
 
-        Args:
-            mf: pyscf.scf.hf.SCF
-                Mean-field (SCF) calculation result.
-            U: np.ndarray
-               Unitary matrix used to localize the MOs.
-            
+        The energies are obtained as the expectation values of the Fock operator in the localised MO basis:
+            ε_i = ⟨L_i | F | L_i⟩
+
+       Args:
+        mf (pyscf.scf.hf.SCF): Mean-field (SCF) calculation result.
+        U (np.ndarray): Unitary matrix transforming canonical MOs
+            into localized MOs.
+
         Returns:
-            List[float]:
-                loc_mo_energies: Energies of the localized MOs.
+            np.ndarray: Energies of the localized MOs.
         """
 
         mo_energies = mf.mo_energy
@@ -456,50 +453,61 @@ class MoleculeFeatureExtractor:
         return loc_mo_energies
     
     @staticmethod
-    def generate_cube_files(C_loc, mol):
+    def generate_cube_files(C_loc, mol, outdir = "cube_files"):
 
         """
-        generate cube files so that we can visualise the molecular orbitals
+        Generate Gaussian cube files for localized molecular orbitals (LMOs),
+        which can be visualized with external software
 
         Args:
-            C_loc: np.ndarray
-                   localized molecular orbitals' coefficients
+            C_loc (np.ndarray): Localized MO coefficients.
+            mol (pyscf.gto.Mole): Molecule object.
+            outdir (str, optional): Directory where cube files will be saved. Default: "cube_files".
         """
+
         # Create output directory if it doesn't exist
-        os.makedirs("cube_files", exist_ok=True)
+        os.makedirs(outdir, exist_ok=True)
         for mo_index in range(C_loc.shape[1]):
             coeff_vector = C_loc[:, mo_index]
 
-            cube_filename = os.path.join("cube_files", f'mo{mo_index}.cube')
+            cube_filename = os.path.join(outdir, f'mo{mo_index}.cube')
 
             cubegen.orbital(mol, cube_filename, coeff_vector, nx=80, margin=3.0)
         
-    def extract_molecule_features(self, L_prev = None, ntries = 10):
+    def extract_molecule_features(self, L_prev = None, ntries = 20, write_cubes = True):
 
         """
-        Extract molecule features, with repeated localisation to pick the best
+        Extract molecule features by performing repeated orbital localizations and keeping the best result (based on the Pipek–Mezey functional).
 
         Args:
-            ntries: int
-                    number of trials to run the localisation
-            L_prev: np.ndarray
-                    matrix with coefficients of the localised molecular orbitals of a previous molecule
+        L_prev (np.ndarray, optional): Localized MO coefficients from a previous
+            molecule, used for orbital alignment.
+        ntries (int, optional): Number of localization attempts with different
+            random seeds. Default is 20.
+        write_cubes (bool, optional): If True, generate cube files for LMOs.
+            Default is True.
 
         Returns:
-            Tuple([List[str], List[str], List[float], List[float], List[float]):
-                atoms_0: list of most-contributing atom symbols per orbital.
-                atoms_1: list of second-most -contributing atom symbols per orb.
-                distances: list of distances between those atom pairs.
-                maglz_expect: the expectation values of |Lz|for each MO, when aligned with the z-axis
-                mo_energies: Energies of the localized MOs.
+            tuple:
+                maglz_expect (np.ndarray): Expectation values of |Lz| for each LMO.
+                atoms_0 (list[str]): Most-contributing atom per orbital.
+                atoms_1 (list[Union[str, int]]): Second-most contributing atom per orbital (0 if none).
+                atoms_2 (list[Union[str, int]]): Third-most contributing atom per orbital (0 if none).
+                charges_0 (list[int]): Nuclear charges of atoms_0.
+                charges_1 (list[int]): Nuclear charges of atoms_1.
+                charges_2 (list[int]): Nuclear charges of atoms_2.
+                inv_R_01 (list[float]): Inverse distances between atoms_0 and atoms_1.
+                inv_R_02 (list[float]): Inverse distances between atoms_0 and atoms_2.
+                inv_R_12 (list[float]): Inverse distances between atoms_1 and atoms_2.
+                mo_energies (np.ndarray): Energies of the localized MOs.
         """
-
+        # --- SCF calculation ---
         mf = scf.RHF(self.mol)
         mf.kernel()
         mo_coeff = mf.mo_coeff
         mo_occ = mf.mo_occ
 
-        # --- Try multiple localisations ---
+        # --- Try multiple localisations, keep best ---
         best_val = -np.inf
         best_L, best_U = None, None
 
@@ -518,23 +526,19 @@ class MoleculeFeatureExtractor:
                 best_val = val_localized
                 best_L, best_U = L, U
         
+        # Final best localisation
         C_loc, U = best_L, best_U
 
+        # --- feature extraction ---
         indices_list = MoleculeFeatureExtractor.population_analysis(self.mol, C_loc, mf)
-        ###################################################################################################################
-        atoms_0, atoms_1, atoms_2, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12 = MoleculeFeatureExtractor.find_inverse_distances_and_atoms_on_which_MOs_are_centered(self.mol, indices_list)
-        ###################################################################################################################
-        rot_C_loc = MoleculeFeatureExtractor.rotate_orbitals(self.mol, C_loc, mf)
-
-        df_rot_C_loc = pd.DataFrame(rot_C_loc)
-        df_rot_C_loc['AO'] = self.mol.ao_labels()
-        print(df_rot_C_loc)
         
-        MoleculeFeatureExtractor.generate_cube_files(rot_C_loc, self.mol)
-        maglz_expect = MoleculeFeatureExtractor.calculate_mag_lz(self.mol, rot_C_loc)
+        atoms_0, atoms_1, atoms_2, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12 = MoleculeFeatureExtractor.find_inverse_distances_and_atoms_on_which_MOs_are_centered(self.mol, indices_list)
+        
+        maglz_expect = MoleculeFeatureExtractor.rotate_orbitals_and_calculate_mag_lz(self.mol, C_loc, mf)
+        
+        if write_cubes:
+            MoleculeFeatureExtractor.generate_cube_files(C_loc, self.mol)
         mo_energies = MoleculeFeatureExtractor.calculate_energy(mf, U)
 
-        ############################################################################################################################
         return maglz_expect, atoms_0, atoms_1, atoms_2, charges_0, charges_1, charges_2, inv_R_01, inv_R_02, inv_R_12, mo_energies
-        ############################################################################################################################
-
+        
